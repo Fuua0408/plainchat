@@ -2,9 +2,46 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>PlainChat</title>
+  <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <h1>PlainChat - under construction</h1>
+
+  <section id="loginView" class="view active">
+    <form id="loginForm" class="login-box">
+      <h1>PlainChat</h1>
+      <label>
+        ユーザー名
+        <input id="loginUsername" type="text" autocomplete="username" required>
+      </label>
+      <label>
+        パスワード
+        <input id="loginPassword" type="password" autocomplete="current-password" required>
+      </label>
+      <button type="submit">ログイン</button>
+      <p id="loginError" class="error-text"></p>
+    </form>
+  </section>
+
+  <section id="chatView" class="view">
+    <aside class="sidebar">
+      <button id="newConversationBtn" type="button" class="new-conversation-btn">+ 新しい会話</button>
+      <ul id="conversationList" class="conversation-list"></ul>
+      <button id="logoutBtn" type="button" class="logout-btn">ログアウト</button>
+    </aside>
+
+    <main class="chat-pane">
+      <div id="messageList" class="message-list"></div>
+      <p id="chatError" class="error-text"></p>
+      <form id="chatForm" class="chat-input-form">
+        <textarea id="chatInput" placeholder="メッセージを入力（Enterで送信、Shift+Enterで改行）" rows="2"></textarea>
+        <button id="sendBtn" type="submit">送信</button>
+      </form>
+    </main>
+  </section>
+
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
 </body>
 </html>
