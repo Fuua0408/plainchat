@@ -1,0 +1,19 @@
+# Node.js
+node_modules/
+npm-debug.log*
+
+# Environment
+.env
+
+# Data / uploads
+data/
+
+# Reference source (NookResonance, local only)
+.base/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
