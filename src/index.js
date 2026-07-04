@@ -5,6 +5,7 @@ require('dotenv').config();
 const path = require('path');
 const express = require('express');
 const logger = require('./logger');
+const { initDb } = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 18091;
@@ -16,6 +17,8 @@ app.get('/api/health', (req, res) => {
 });
 
 app.use(express.static(path.join(__dirname, '..', 'public')));
+
+initDb();
 
 app.listen(PORT, () => {
   logger.info(`plainchat server listening on port ${PORT}`);
