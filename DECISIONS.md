@@ -98,3 +98,10 @@
 - **決定**: DECISIONS.mdへの追記はチャット(設計側)の担当を基本とするが、
   Claude Codeが実装中の発見を直接追記することも可。ただしレビュー対象に含める
 - **経緯**: 005でClaude Codeがkeep-alive問題の記録を直接追記した(内容は適切だった)
+
+## 2026-07-05: llama.cppクラッシュの根本原因判明
+- **事実**: 生成途中クラッシュの正体は ggml-cuda/fattn.cu:579 の fatal error
+  (CUDA Flash Attentionカーネル)。PlainChat/textgen-webuiは無関係
+- **対処**: n_ctxを76800に戻し、max_tokens=32768として解消(インフラ側設定)
+- **備考**: 以前の「切断伝播が原因」仮説は撤回。n_ctx=32000構成が
+  かえって不安定だった。現行n_ctxは76800(当初計画の81920ではない点に注意)

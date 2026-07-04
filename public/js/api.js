@@ -84,6 +84,14 @@ async function deleteConversation(id) {
   return apiJson(`/api/conversations/${id}`, { method: 'DELETE' });
 }
 
+async function renameConversation(id, title) {
+  const data = await apiJson(`/api/conversations/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ title }),
+  });
+  return data.conversation;
+}
+
 async function getMessages(id) {
   const data = await apiJson(`/api/conversations/${id}/messages`);
   return data.messages;
@@ -91,16 +99,24 @@ async function getMessages(id) {
 
 // SSEチャット送信。event: delta/done/error を自前パースしてコールバックへ渡す
 // fetch + getReader()を使う理由: EventSourceはGET専用でPOSTボディを送れないため
-async function streamChat(conversationId, content, { onDelta, onDone, onError }) {
+// signalで中断された場合は例外を投げず onAbort を呼ぶ(呼び出し側でエラー扱いしないため)
+async function streamChat(conversationId, content, { onDelta, onDone, onError, onAbort, signal }) {
   const token = getAuthToken();
-  const resp = await fetch(`/api/conversations/${conversationId}/chat`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-    },
-    body: JSON.stringify({ content }),
-  });
+  let resp;
+  try {
+    resp = await fetch(`/api/conversations/${conversationId}/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ content }),
+      signal,
+    });
+  } catch (e) {
+    if (e.name === 'AbortError') { onAbort && onAbort(); return; }
+    throw e;
+  }
 
   if (resp.status === 401) {
     clearAuth();
@@ -116,17 +132,22 @@ async function streamChat(conversationId, content, { onDelta, onDone, onError })
   const decoder = new TextDecoder();
   let buffer = '';
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
 
-    let idx;
-    while ((idx = buffer.indexOf('\n\n')) !== -1) {
-      const rawEvent = buffer.slice(0, idx);
-      buffer = buffer.slice(idx + 2);
-      dispatchSseEvent(rawEvent, { onDelta, onDone, onError });
+      let idx;
+      while ((idx = buffer.indexOf('\n\n')) !== -1) {
+        const rawEvent = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        dispatchSseEvent(rawEvent, { onDelta, onDone, onError });
+      }
     }
+  } catch (e) {
+    if (e.name === 'AbortError') { onAbort && onAbort(); return; }
+    throw e;
   }
 }
 
