@@ -167,6 +167,19 @@ async function loadConversations() {
   }
 }
 
+// タイトル未設定(デフォルトのまま)の会話のみ、バックグラウンドでタイトルを自動生成する
+// 失敗してもチャット体験には影響させない(console.warnに留め、デフォルトタイトルのまま)
+async function maybeGenerateTitle(id) {
+  const conv = conversations.find((c) => c.id === id);
+  if (!conv || conv.title !== '新しい会話') return;
+  try {
+    await generateTitle(id);
+    await loadConversations();
+  } catch (e) {
+    console.warn('generate-title failed:', e.message);
+  }
+}
+
 async function handleNewConversation() {
   try {
     const conv = await createConversation();
@@ -317,6 +330,8 @@ async function handleSend(e) {
     }
   }
 
+  const conversationId = currentConversationId;
+
   appendMessageBubble('user', text);
   chatInput.value = '';
   setSending(true);
@@ -343,13 +358,14 @@ async function handleSend(e) {
         assistantBubble.textContent = assistantText;
         scrollToBottom();
       },
-      onDone: () => {
+      onDone: async () => {
         currentAbortController = null;
         assistantBubble.classList.remove('streaming');
         setBubbleContent(assistantBubble, 'assistant', assistantText);
         scrollToBottom();
         setSending(false);
-        loadConversations();
+        await loadConversations();
+        maybeGenerateTitle(conversationId);
       },
       onError: (msg) => {
         currentAbortController = null;

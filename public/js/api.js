@@ -97,6 +97,11 @@ async function getMessages(id) {
   return data.messages;
 }
 
+async function generateTitle(id) {
+  const data = await apiJson(`/api/conversations/${id}/generate-title`, { method: 'POST' });
+  return data.conversation;
+}
+
 // SSEチャット送信。event: delta/done/error を自前パースしてコールバックへ渡す
 // fetch + getReader()を使う理由: EventSourceはGET専用でPOSTボディを送れないため
 // signalで中断された場合は例外を投げず onAbort を呼ぶ(呼び出し側でエラー扱いしないため)
