@@ -17,4 +17,5 @@ Thumbs.db
 
 # Logs
 *.log
+# start script
 start.bat
