@@ -108,6 +108,16 @@ function renderConversationList() {
   }
 }
 
+// 会話一覧を再生成せず、選択ハイライト(activeクラス)だけを更新する。
+// selectConversation()から一覧全体を再生成すると、シングルクリックで
+// 会話を切り替えた瞬間にDOMが差し替わり、直後に届くはずのdblclickイベントが
+// 既に切り離された旧title要素に発火してリネームUIが開かなくなる不具合があった。
+function updateActiveConversationHighlight() {
+  for (const li of conversationList.children) {
+    li.classList.toggle('active', Number(li.dataset.id) === currentConversationId);
+  }
+}
+
 function startRenameConversation(conv, li, titleSpan) {
   const input = document.createElement('input');
   input.type = 'text';
@@ -286,7 +296,7 @@ function createThinkingBubble() {
 
 async function selectConversation(id) {
   currentConversationId = id;
-  renderConversationList();
+  updateActiveConversationHighlight();
   setChatError('');
   try {
     const messages = await getMessages(id);

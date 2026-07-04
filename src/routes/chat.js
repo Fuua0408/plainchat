@@ -50,7 +50,8 @@ router.post('/:id/chat', async (req, res) => {
   const history = db
     .prepare('SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY id ASC')
     .all(req.params.id)
-    .map((m) => ({ role: m.role, content: m.content }));
+    .map((m) => ({ role: m.role, content: m.content }))
+    .filter((m) => m.content.trim() !== '');
 
   const url         = endpoint.replace(/\/chat\/completions$/, '') + '/chat/completions';
   const apiKey      = process.env.LLM_API_KEY || 'sk-fake';
@@ -151,6 +152,14 @@ router.post('/:id/chat', async (req, res) => {
     }
 
     clearTimeout(timeoutId);
+
+    if (fullText.trim() === '') {
+      settled = true;
+      safeWrite(() => sendEvent(res, 'error', { error: 'LLMの応答が空でした(思考トークン超過の可能性)' }));
+      safeWrite(() => res.end());
+      return;
+    }
+
     const messageId = saveAssistantMessage(fullText);
     safeWrite(() => sendEvent(res, 'done', { messageId }));
     settled = true;
