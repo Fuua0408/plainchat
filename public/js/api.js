@@ -29,7 +29,9 @@ async function apiFetch(path, options = {}) {
   const headers = Object.assign({}, options.headers);
   const token = getAuthToken();
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+  // FormData送信時はブラウザがboundary付きContent-Typeを自動設定するため、上書きしない
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  if (options.body && !isFormData && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
 
   const resp = await fetch(path, Object.assign({}, options, { headers }));
   if (resp.status === 401) {
@@ -128,11 +130,37 @@ async function generateTitle(id) {
   return data.conversation;
 }
 
+// 画像1枚をアップロードして { id, url } を返す(1リクエスト1画像)
+async function uploadImage(conversationId, file) {
+  const formData = new FormData();
+  formData.append('conversation_id', String(conversationId));
+  formData.append('image', file);
+  const resp = await apiFetch('/api/uploads/image', { method: 'POST', body: formData });
+  let data = null;
+  try { data = await resp.json(); } catch { /* no body */ }
+  if (!resp.ok) {
+    throw new Error((data && data.error) || `アップロードに失敗しました (${resp.status})`);
+  }
+  return data;
+}
+
+// Bearer必須の画像URLを認証付きfetchで取得し、objectURLへ変換する
+// (表示認証はBlob方式のため、<img src>への直指定は不可)
+async function fetchImageObjectUrl(url) {
+  const resp = await apiFetch(url);
+  if (!resp.ok) {
+    throw new Error(`画像の取得に失敗しました (${resp.status})`);
+  }
+  const blob = await resp.blob();
+  return URL.createObjectURL(blob);
+}
+
 // SSEチャット送信。event: delta/done/error を自前パースしてコールバックへ渡す
 // fetch + getReader()を使う理由: EventSourceはGET専用でPOSTボディを送れないため
 // signalで中断された場合は例外を投げず onAbort を呼ぶ(呼び出し側でエラー扱いしないため)
-async function streamChat(conversationId, content, { onDelta, onDone, onError, onAbort, signal }) {
+async function streamChat(conversationId, content, { attachment_ids, onDelta, onDone, onError, onAbort, signal }) {
   const token = getAuthToken();
+  const body = Array.isArray(attachment_ids) ? { content, attachment_ids } : { content };
   let resp;
   try {
     resp = await fetch(`/api/conversations/${conversationId}/chat`, {
@@ -141,7 +169,7 @@ async function streamChat(conversationId, content, { onDelta, onDone, onError, o
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify(body),
       signal,
     });
   } catch (e) {

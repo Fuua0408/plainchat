@@ -28,6 +28,9 @@ const chatForm = document.getElementById('chatForm');
 const chatInput = document.getElementById('chatInput');
 const sendBtn = document.getElementById('sendBtn');
 const chatError = document.getElementById('chatError');
+const attachBtn = document.getElementById('attachBtn');
+const attachInput = document.getElementById('attachInput');
+const attachPreviewList = document.getElementById('attachPreviewList');
 
 const hljsLightTheme = document.getElementById('hljsLightTheme');
 const hljsDarkTheme = document.getElementById('hljsDarkTheme');
@@ -45,6 +48,11 @@ let currentConversationSystemPrompt = '';
 let sending = false;
 let currentAbortController = null;
 let modalMode = null; // 'global' | 'conversation'
+
+// 1メッセージあたりの画像添付上限(フロントの定数。DECISIONS.md 2026-07-05参照)
+const MAX_ATTACHMENTS = 4;
+let selectedAttachments = []; // [{ file: File, dataUrl: string }]
+let messageObjectUrls = []; // 履歴表示用に生成したobjectURL(再描画時にrevokeする)
 
 // ─────────────────────────────────────────────
 // ダークモード
@@ -337,16 +345,36 @@ function decorateCodeBlocks(container) {
   });
 }
 
-function setBubbleContent(bubble, role, text) {
+function setBubbleContent(target, role, text) {
   if (role === 'assistant') {
-    bubble.innerHTML = renderMarkdown(text);
-    decorateCodeBlocks(bubble);
+    target.innerHTML = renderMarkdown(text);
+    decorateCodeBlocks(target);
   } else {
-    bubble.textContent = text;
+    target.textContent = text;
   }
 }
 
-function renderMessages(messages) {
+function createMessageImagesEl(srcs) {
+  const wrap = document.createElement('div');
+  wrap.className = 'message-images';
+  for (const src of srcs) {
+    const img = document.createElement('img');
+    img.src = src;
+    img.alt = '';
+    img.className = 'message-image';
+    wrap.appendChild(img);
+  }
+  return wrap;
+}
+
+// これまでに生成した履歴表示用objectURLを解放する(会話切り替え・再描画時のリーク防止)
+function revokeMessageObjectUrls() {
+  for (const url of messageObjectUrls) URL.revokeObjectURL(url);
+  messageObjectUrls = [];
+}
+
+async function renderMessages(messages) {
+  revokeMessageObjectUrls();
   messageList.innerHTML = '';
   if (messages.length === 0) {
     const empty = document.createElement('p');
@@ -356,17 +384,41 @@ function renderMessages(messages) {
     return;
   }
   for (const m of messages) {
-    appendMessageBubble(m.role, m.content);
+    let imageSrcs = [];
+    if (m.attachments && m.attachments.length > 0) {
+      const fetched = await Promise.all(
+        m.attachments.map((a) =>
+          fetchImageObjectUrl(a.url).catch((err) => {
+            console.warn('attachment fetch failed:', err.message);
+            return null;
+          })
+        )
+      );
+      imageSrcs = fetched.filter((src) => src !== null);
+      messageObjectUrls.push(...imageSrcs);
+    }
+    appendMessageBubble(m.role, m.content, imageSrcs);
   }
   scrollToBottom();
 }
 
-function appendMessageBubble(role, text) {
+// imageSrcs: <img src>にそのまま設定できるURL文字列(dataURL または objectURL)の配列
+function appendMessageBubble(role, text, imageSrcs) {
   const existingEmpty = messageList.querySelector('.empty-state');
   if (existingEmpty) existingEmpty.remove();
   const bubble = document.createElement('div');
   bubble.className = 'message message-' + role;
-  setBubbleContent(bubble, role, text);
+
+  if (imageSrcs && imageSrcs.length > 0) {
+    bubble.appendChild(createMessageImagesEl(imageSrcs));
+    const textEl = document.createElement('div');
+    textEl.className = 'message-text';
+    setBubbleContent(textEl, role, text || '');
+    bubble.appendChild(textEl);
+  } else {
+    setBubbleContent(bubble, role, text);
+  }
+
   messageList.appendChild(bubble);
   scrollToBottom();
   return bubble;
@@ -392,11 +444,81 @@ async function selectConversation(id) {
     const { conversation, messages } = await getMessages(id);
     currentConversationSystemPrompt = conversation.system_prompt || '';
     conversationSettingsBtn.disabled = false;
-    renderMessages(messages);
+    await renderMessages(messages);
   } catch (e) {
     setChatError(e.message);
   }
 }
+
+// ─────────────────────────────────────────────
+// 画像添付
+// ─────────────────────────────────────────────
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderAttachPreviews() {
+  attachPreviewList.innerHTML = '';
+  attachPreviewList.hidden = selectedAttachments.length === 0;
+  selectedAttachments.forEach((att, idx) => {
+    const thumb = document.createElement('div');
+    thumb.className = 'attach-thumb';
+
+    const img = document.createElement('img');
+    img.src = att.dataUrl;
+    img.alt = '';
+    thumb.appendChild(img);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'attach-thumb-remove';
+    removeBtn.setAttribute('aria-label', '削除');
+    removeBtn.textContent = '×';
+    removeBtn.addEventListener('click', () => {
+      selectedAttachments.splice(idx, 1);
+      renderAttachPreviews();
+    });
+    thumb.appendChild(removeBtn);
+
+    attachPreviewList.appendChild(thumb);
+  });
+}
+
+function clearAttachments() {
+  selectedAttachments = [];
+  renderAttachPreviews();
+}
+
+async function handleAttachInputChange() {
+  const files = Array.from(attachInput.files || []);
+  attachInput.value = ''; // 同じファイルを続けて選択できるようにする
+  if (files.length === 0) return;
+
+  setChatError('');
+  const remaining = MAX_ATTACHMENTS - selectedAttachments.length;
+  if (remaining <= 0) {
+    setChatError(`画像は1メッセージにつき最大${MAX_ATTACHMENTS}枚までです`);
+    return;
+  }
+  const accepted = files.slice(0, remaining);
+  if (files.length > remaining) {
+    setChatError(`画像は1メッセージにつき最大${MAX_ATTACHMENTS}枚までです。超過分は無視しました`);
+  }
+
+  for (const file of accepted) {
+    const dataUrl = await readFileAsDataUrl(file);
+    selectedAttachments.push({ file, dataUrl });
+  }
+  renderAttachPreviews();
+}
+
+attachBtn.addEventListener('click', () => attachInput.click());
+attachInput.addEventListener('change', handleAttachInputChange);
 
 // ─────────────────────────────────────────────
 // 送受信
@@ -404,6 +526,7 @@ async function selectConversation(id) {
 function setSending(isSending) {
   sending = isSending;
   chatInput.disabled = isSending;
+  attachBtn.disabled = isSending;
   sendBtn.textContent = isSending ? '停止' : '送信';
   sendBtn.classList.toggle('stop-btn', isSending);
 }
@@ -417,7 +540,8 @@ async function handleSend(e) {
   }
 
   const text = chatInput.value.trim();
-  if (!text) return;
+  const hasAttachments = selectedAttachments.length > 0;
+  if (!text && !hasAttachments) return;
 
   setChatError('');
 
@@ -434,9 +558,30 @@ async function handleSend(e) {
 
   const conversationId = currentConversationId;
 
-  appendMessageBubble('user', text);
-  chatInput.value = '';
   setSending(true);
+
+  // 添付ありの場合は先に全画像をアップロードする。1枚でも失敗したら送信を中断する(部分送信はしない)
+  let attachmentIds;
+  let imagePreviewSrcs = [];
+  if (hasAttachments) {
+    imagePreviewSrcs = selectedAttachments.map((a) => a.dataUrl);
+    try {
+      const ids = [];
+      for (const att of selectedAttachments) {
+        const uploaded = await uploadImage(conversationId, att.file);
+        ids.push(uploaded.id);
+      }
+      attachmentIds = ids;
+    } catch (err) {
+      setChatError(err.message);
+      setSending(false);
+      return;
+    }
+  }
+
+  appendMessageBubble('user', text, imagePreviewSrcs);
+  chatInput.value = '';
+  clearAttachments();
 
   const assistantBubble = createThinkingBubble();
   let assistantText = '';
@@ -447,6 +592,7 @@ async function handleSend(e) {
 
   try {
     await streamChat(currentConversationId, text, {
+      attachment_ids: attachmentIds,
       signal: controller.signal,
       onDelta: (delta) => {
         if (!firstDeltaReceived) {
@@ -480,7 +626,7 @@ async function handleSend(e) {
         try {
           const { conversation, messages } = await getMessages(currentConversationId);
           currentConversationSystemPrompt = conversation.system_prompt || '';
-          renderMessages(messages);
+          await renderMessages(messages);
         } catch (err) {
           setChatError(err.message);
         }
