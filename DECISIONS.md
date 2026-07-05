@@ -194,3 +194,36 @@
   暴発防止に上限を設ける。単一ユーザー運用ゆえバックエンド側の上限は当面設けない
 - **未検証事項**: textgen-webui経由での「1メッセージ複数画像」の素通しは015の実地確認で担保する
   (014の実地確認は1枚)。ドラッグ&ドロップ・貼り付けは将来候補
+
+## 2026-07-05: 空応答対応(reasoning budgetで根本緩和)
+- **決定**: 空応答(思考がmax_tokensを食い尽くしcontentが空)への対策として、
+  llama.cpp serverに reasoning budget を設定する。textgen-webuiがllama.cppを内部起動
+  しているため、ローダの extra-flags に `--reasoning-budget N`(初期6000)と
+  `--reasoning-budget-message` を渡す。全リクエスト一律の上限とする
+- **理由**: 思考と答えが同一のmax_tokens枠を奪い合うのが根本原因。budgetで思考を打ち切り
+  答えの枠を必ず残す。インフラ設定のみでPlainChat無改造、2段構成でも確実に効く
+- **割り切り**: グローバルフラグ設定中はリクエスト単位の thinking_budget_tokens 上書きは
+  無効(タスク別制御が要るなら将来ボディ方式+textgen素通し確認へ)
+- **据え置き**: 009の空応答防御は最終防壁として維持。reasoning_content を空時に救済する
+  chat.js硬化(④)は必要時の候補
+- **要確認**: Gemma構成で思考タグがbudget機構に認識されるか(reasoning解析がautoで効くか)を
+  実地確認。効かなければ reasoning on 明示/テンプレートのthinkタグを点検
+
+  ## 2026-07-05: 空応答対応(reasoning budgetで解決)
+- **決定**: 空応答(思考がmax_tokensを食い尽くしcontentが空)への対策として、
+  llama.cpp serverに reasoning budget を設定。textgen-webuiがllama.cppを内部起動しているため、
+  ローダの extra-flags に `--reasoning-budget 6000` を渡す(全リクエスト一律)
+- **理由**: 思考と答えが同一のmax_tokens枠を奪い合うのが根本原因。budgetで思考を打ち切り
+  答えの枠を必ず残す。インフラ設定のみでPlainChat無改造、2段構成でも確実に効く
+- **検証**: 長文グローバルSystem Prompt(約11,600字)をそのまま使用し、テキスト/合成画像2枚/
+  実写2枚の全パターンで空応答が再現しないことを確認(応答4〜9秒)。フロント無改造
+- **割り切り**: グローバルフラグ設定中はリクエスト単位の thinking_budget_tokens 上書きは無効
+  (タスク別制御が要るなら将来ボディ方式+textgen素通し確認へ)
+- **据え置き**: 009の空応答防御は最終防壁として維持。reasoning_content を空時に救済する
+  chat.js硬化(④)は必要時の候補
+- **運用注意**: extra-flags 経由でスペースを含む値(--reasoning-budget-message 等)を渡すと
+  llama-server起動時に引数が途中で切れて落ちる。まず --reasoning-budget 単体で運用し、
+  メッセージ注入が要るなら値を1語にするかクォートで囲む
+- **補足**: 移行メッセージも併用。extra-flags は
+  `--reasoning-budget 6000 --reasoning-budget-message "Thinking budget exceeded, let's answer now."`。
+  スペースを含む値はダブルクォートで囲めば textgen 経由でも1引数として渡る
