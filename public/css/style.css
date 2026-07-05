@@ -158,6 +158,91 @@ html, body {
   background: var(--accent-soft);
 }
 
+.conversation-search {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-input {
+  width: 100%;
+  padding: 8px 26px 8px 8px;
+  font-size: 13px;
+  font-family: inherit;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.search-clear-btn {
+  position: absolute;
+  right: 4px;
+  border: none;
+  background: none;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.search-clear-btn:hover {
+  color: var(--text-primary);
+}
+
+.date-filter-toggle-btn {
+  align-self: flex-start;
+  padding: 4px 6px;
+  font-size: 12px;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.date-filter-toggle-btn:hover {
+  color: var(--text-primary);
+}
+
+.date-filter-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+}
+
+.date-filter-panel label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.date-filter-panel input[type="date"] {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  font-size: 12px;
+  font-family: inherit;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
 .conversation-list {
   flex: 1;
   overflow-y: auto;
@@ -187,13 +272,35 @@ html, body {
   background: var(--active-bg);
 }
 
-.conversation-title {
+.conversation-list-empty {
+  padding: 12px 10px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.conversation-info {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.conversation-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 14px;
   color: var(--text-primary);
+}
+
+.conversation-snippet {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-secondary);
 }
 
 .conversation-title-input {

@@ -29,6 +29,25 @@
   <section id="chatView" class="view">
     <aside class="sidebar">
       <button id="newConversationBtn" type="button" class="new-conversation-btn">+ 新しい会話</button>
+
+      <div class="conversation-search">
+        <div class="search-input-wrap">
+          <input id="searchInput" type="text" class="search-input" placeholder="会話を検索">
+          <button id="searchClearBtn" type="button" class="search-clear-btn" aria-label="検索をクリア" hidden>×</button>
+        </div>
+        <button id="dateFilterToggleBtn" type="button" class="date-filter-toggle-btn" aria-expanded="false">📅 日付で絞り込み</button>
+        <div id="dateFilterPanel" class="date-filter-panel" hidden>
+          <label>
+            From
+            <input id="dateFromInput" type="date">
+          </label>
+          <label>
+            To
+            <input id="dateToInput" type="date">
+          </label>
+        </div>
+      </div>
+
       <ul id="conversationList" class="conversation-list"></ul>
       <button id="themeToggleBtn" type="button" class="theme-toggle-btn">🌙 ダーク</button>
       <button id="settingsBtn" type="button" class="settings-btn">⚙ 設定</button>

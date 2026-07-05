@@ -12,6 +12,12 @@ const loginError = document.getElementById('loginError');
 
 const newConversationBtn = document.getElementById('newConversationBtn');
 const conversationList = document.getElementById('conversationList');
+const searchInput = document.getElementById('searchInput');
+const searchClearBtn = document.getElementById('searchClearBtn');
+const dateFilterToggleBtn = document.getElementById('dateFilterToggleBtn');
+const dateFilterPanel = document.getElementById('dateFilterPanel');
+const dateFromInput = document.getElementById('dateFromInput');
+const dateToInput = document.getElementById('dateToInput');
 const logoutBtn = document.getElementById('logoutBtn');
 const themeToggleBtn = document.getElementById('themeToggleBtn');
 const settingsBtn = document.getElementById('settingsBtn');
@@ -92,10 +98,22 @@ function setChatError(msg) {
 // ─────────────────────────────────────────────
 function renderConversationList() {
   conversationList.innerHTML = '';
+
+  if (conversations.length === 0) {
+    const empty = document.createElement('li');
+    empty.className = 'conversation-list-empty';
+    empty.textContent = '該当する会話がありません';
+    conversationList.appendChild(empty);
+    return;
+  }
+
   for (const conv of conversations) {
     const li = document.createElement('li');
     li.className = 'conversation-item' + (conv.id === currentConversationId ? ' active' : '');
     li.dataset.id = String(conv.id);
+
+    const info = document.createElement('div');
+    info.className = 'conversation-info';
 
     const title = document.createElement('span');
     title.className = 'conversation-title';
@@ -105,6 +123,14 @@ function renderConversationList() {
       e.stopPropagation();
       startRenameConversation(conv, li, title);
     });
+    info.appendChild(title);
+
+    if (conv.snippet) {
+      const snippet = document.createElement('span');
+      snippet.className = 'conversation-snippet';
+      snippet.textContent = conv.snippet;
+      info.appendChild(snippet);
+    }
 
     const delBtn = document.createElement('button');
     delBtn.className = 'conversation-delete';
@@ -115,7 +141,7 @@ function renderConversationList() {
       handleDeleteConversation(conv.id);
     });
 
-    li.appendChild(title);
+    li.appendChild(info);
     li.appendChild(delBtn);
     conversationList.appendChild(li);
   }
@@ -136,14 +162,15 @@ function startRenameConversation(conv, li, titleSpan) {
   input.type = 'text';
   input.className = 'conversation-title-input';
   input.value = conv.title || '';
-  li.replaceChild(input, titleSpan);
+  const titleParent = titleSpan.parentElement;
+  titleParent.replaceChild(input, titleSpan);
   input.focus();
   input.select();
 
   let finished = false;
 
   function restoreSpan() {
-    if (input.parentElement === li) li.replaceChild(titleSpan, input);
+    if (input.parentElement === titleParent) titleParent.replaceChild(titleSpan, input);
   }
 
   async function commit() {
@@ -179,7 +206,11 @@ function startRenameConversation(conv, li, titleSpan) {
 
 async function loadConversations() {
   try {
-    conversations = await listConversations();
+    conversations = await listConversations({
+      q: searchInput.value.trim(),
+      from: dateFromInput.value,
+      to: dateToInput.value,
+    });
     if (currentConversationId && !conversations.some((c) => c.id === currentConversationId)) {
       currentConversationId = null;
       currentConversationSystemPrompt = '';
@@ -191,6 +222,47 @@ async function loadConversations() {
     setChatError(e.message);
   }
 }
+
+// 検索文字列・日付フィルタをUI・状態ともにクリアし、全件表示に戻す
+function clearSearchAndFilters() {
+  searchInput.value = '';
+  dateFromInput.value = '';
+  dateToInput.value = '';
+  searchClearBtn.hidden = true;
+}
+
+let searchDebounceTimer = null;
+function scheduleSearchReload() {
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(() => {
+    searchDebounceTimer = null;
+    loadConversations();
+  }, 280);
+}
+
+searchInput.addEventListener('input', () => {
+  searchClearBtn.hidden = searchInput.value === '';
+  scheduleSearchReload();
+});
+
+searchClearBtn.addEventListener('click', () => {
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = null;
+  }
+  searchInput.value = '';
+  searchClearBtn.hidden = true;
+  loadConversations();
+});
+
+dateFilterToggleBtn.addEventListener('click', () => {
+  const willOpen = dateFilterPanel.hidden;
+  dateFilterPanel.hidden = !willOpen;
+  dateFilterToggleBtn.setAttribute('aria-expanded', String(willOpen));
+});
+
+dateFromInput.addEventListener('change', () => loadConversations());
+dateToInput.addEventListener('change', () => loadConversations());
 
 // タイトル未設定(デフォルトのまま)の会話のみ、バックグラウンドでタイトルを自動生成する
 // 失敗してもチャット体験には影響させない(console.warnに留め、デフォルトタイトルのまま)
@@ -207,6 +279,7 @@ async function maybeGenerateTitle(id) {
 
 async function handleNewConversation() {
   try {
+    clearSearchAndFilters();
     const conv = await createConversation();
     await loadConversations();
     await selectConversation(conv.id);

@@ -21,12 +21,98 @@ function findOwnConversation(db, id, userId) {
   return db.prepare('SELECT id FROM conversations WHERE id = ? AND user_id = ?').get(id, userId);
 }
 
-// GET /api/conversations
+const LIKE_ESCAPE_CHAR = '\\';
+const SEARCH_QUERY_MAX_LEN = 200;
+const SNIPPET_HALF_WINDOW = 40;
+
+// LIKE のワイルドカード(% _)とエスケープ文字自身を \ でエスケープし、
+// ユーザー入力の % / _ をリテラルとして扱えるようにする
+function escapeLikePattern(str) {
+  return str.replace(/[\\%_]/g, (ch) => LIKE_ESCAPE_CHAR + ch);
+}
+
+function isValidDateStr(s) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(s + 'T00:00:00Z');
+  if (Number.isNaN(d.getTime())) return false;
+  return d.toISOString().slice(0, 10) === s;
+}
+
+// 一致箇所前後を切り出し、改行・連続空白を単一スペースに圧縮したスニペットを作る
+function buildSnippet(content, query) {
+  const normalized = content.replace(/\s+/g, ' ').trim();
+  const idx = normalized.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) {
+    const head = normalized.slice(0, SNIPPET_HALF_WINDOW * 2);
+    return head + (normalized.length > SNIPPET_HALF_WINDOW * 2 ? '…' : '');
+  }
+  const start = Math.max(0, idx - SNIPPET_HALF_WINDOW);
+  const end = Math.min(normalized.length, idx + query.length + SNIPPET_HALF_WINDOW);
+  let snippet = normalized.slice(start, end);
+  if (start > 0) snippet = '…' + snippet;
+  if (end < normalized.length) snippet = snippet + '…';
+  return snippet;
+}
+
+// GET /api/conversations?q=&from=&to=
 router.get('/', (req, res) => {
+  const { q: qRaw, from: fromRaw, to: toRaw } = req.query;
+
+  const q = typeof qRaw === 'string' ? qRaw.trim() : '';
+  if (q.length > SEARCH_QUERY_MAX_LEN) {
+    return res.status(400).json({ error: `q must be ${SEARCH_QUERY_MAX_LEN} characters or fewer` });
+  }
+
+  let from = null;
+  if (typeof fromRaw === 'string' && fromRaw !== '') {
+    if (!isValidDateStr(fromRaw)) return res.status(400).json({ error: 'from must be a valid YYYY-MM-DD date' });
+    from = fromRaw;
+  }
+
+  let to = null;
+  if (typeof toRaw === 'string' && toRaw !== '') {
+    if (!isValidDateStr(toRaw)) return res.status(400).json({ error: 'to must be a valid YYYY-MM-DD date' });
+    to = toRaw;
+  }
+
+  const hasQ = q.length > 0;
+  const pattern = hasQ ? `%${escapeLikePattern(q)}%` : null;
+
+  const params = { userId: req.user.id };
+  let sql = 'SELECT c.id, c.title, c.created_at, c.updated_at';
+  if (hasQ) {
+    sql += `, (c.title LIKE @pattern ESCAPE '${LIKE_ESCAPE_CHAR}') AS title_match`;
+    params.pattern = pattern;
+  }
+  sql += ' FROM conversations c WHERE c.user_id = @userId';
+  if (hasQ) {
+    sql += ` AND (c.title LIKE @pattern ESCAPE '${LIKE_ESCAPE_CHAR}'` +
+      ` OR EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.content LIKE @pattern ESCAPE '${LIKE_ESCAPE_CHAR}'))`;
+  }
+  if (from) {
+    sql += ' AND date(c.updated_at) >= @from';
+    params.from = from;
+  }
+  if (to) {
+    sql += ' AND date(c.updated_at) <= @to';
+    params.to = to;
+  }
+  sql += ' ORDER BY c.updated_at DESC LIMIT 100';
+
   const db = getDb();
-  const conversations = db
-    .prepare('SELECT id, title, created_at, updated_at FROM conversations WHERE user_id = ? ORDER BY updated_at DESC')
-    .all(req.user.id);
+  const rows = db.prepare(sql).all(params);
+
+  const conversations = rows.map((row) => {
+    const conv = { id: row.id, title: row.title, created_at: row.created_at, updated_at: row.updated_at, snippet: null };
+    if (hasQ && !row.title_match) {
+      const msg = db
+        .prepare(`SELECT content FROM messages WHERE conversation_id = ? AND content LIKE ? ESCAPE '${LIKE_ESCAPE_CHAR}' ORDER BY id ASC LIMIT 1`)
+        .get(row.id, pattern);
+      if (msg) conv.snippet = buildSnippet(msg.content, q);
+    }
+    return conv;
+  });
+
   res.json({ conversations });
 });
 

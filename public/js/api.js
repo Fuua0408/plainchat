@@ -70,8 +70,13 @@ function logout() {
   clearAuth();
 }
 
-async function listConversations() {
-  const data = await apiJson('/api/conversations');
+async function listConversations({ q, from, to } = {}) {
+  const usp = new URLSearchParams();
+  if (q) usp.set('q', q);
+  if (from) usp.set('from', from);
+  if (to) usp.set('to', to);
+  const qs = usp.toString();
+  const data = await apiJson('/api/conversations' + (qs ? `?${qs}` : ''));
   return data.conversations;
 }
 
