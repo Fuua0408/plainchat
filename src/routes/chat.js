@@ -1,10 +1,12 @@
 'use strict';
 
+const fs = require('fs');
 const express = require('express');
 const { getDb } = require('../db');
 const { authMiddleware } = require('../auth');
 const logger = require('../logger');
 const { expandPromptTemplate } = require('../promptTemplate');
+const { resolveAttachmentFilePath } = require('../attachmentStorage');
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -38,6 +40,52 @@ function resolveSystemPrompt(db, conversation, userId) {
   return null;
 }
 
+// 画像attachmentを読み込みLLMのVision入力形式(data URL)に変換する。
+// 読み込みに失敗した場合はそのメッセージ内の当該画像のみ諦め、送信自体は継続する
+function buildImageDataUrl(attachment) {
+  try {
+    const filePath = resolveAttachmentFilePath(attachment);
+    const buf = fs.readFileSync(filePath);
+    return `data:${attachment.mime};base64,${buf.toString('base64')}`;
+  } catch (e) {
+    logger.warn('chat: failed to read attachment image', { id: attachment.id, error: e.message });
+    return null;
+  }
+}
+
+// 会話中の各messageに、紐づく画像attachments(id, mime, path, user_id)をまとめて付与する
+function loadImageAttachmentsByMessage(db, conversationId, messageIds) {
+  const byMessage = new Map();
+  if (messageIds.length === 0) return byMessage;
+
+  const placeholders = messageIds.map(() => '?').join(',');
+  const rows = db
+    .prepare(
+      `SELECT id, message_id, mime, path, user_id FROM attachments
+       WHERE conversation_id = ? AND kind = 'image' AND message_id IN (${placeholders})`
+    )
+    .all(conversationId, ...messageIds);
+
+  for (const row of rows) {
+    if (!byMessage.has(row.message_id)) byMessage.set(row.message_id, []);
+    byMessage.get(row.message_id).push(row);
+  }
+  return byMessage;
+}
+
+// messageのcontentを、画像attachmentの有無に応じて文字列 or マルチモーダル配列に組み立てる
+function buildMessageContent(text, images) {
+  if (images.length === 0) return text;
+
+  const parts = [];
+  if (text.trim() !== '') parts.push({ type: 'text', text });
+  for (const image of images) {
+    const url = buildImageDataUrl(image);
+    if (url) parts.push({ type: 'image_url', image_url: { url } });
+  }
+  return parts;
+}
+
 // POST /api/conversations/:id/chat
 router.post('/:id/chat', async (req, res) => {
   const db = getDb();
@@ -46,9 +94,34 @@ router.post('/:id/chat', async (req, res) => {
     .get(req.params.id, req.user.id);
   if (!conversation) return res.status(404).json({ error: 'Not found' });
 
-  const { content } = req.body || {};
-  if (typeof content !== 'string' || content.trim() === '') {
+  const { content: rawContent, attachment_ids: rawAttachmentIds } = req.body || {};
+  const content = typeof rawContent === 'string' ? rawContent : '';
+  const hasContent = content.trim() !== '';
+
+  let attachmentIds = [];
+  if (rawAttachmentIds !== undefined) {
+    if (!Array.isArray(rawAttachmentIds) || rawAttachmentIds.some((v) => !Number.isInteger(v))) {
+      return res.status(400).json({ error: 'attachment_ids must be an array of integers' });
+    }
+    attachmentIds = [...new Set(rawAttachmentIds)];
+  }
+
+  if (!hasContent && attachmentIds.length === 0) {
     return res.status(400).json({ error: 'content is required' });
+  }
+
+  if (attachmentIds.length > 0) {
+    const placeholders = attachmentIds.map(() => '?').join(',');
+    const owned = db
+      .prepare(
+        `SELECT id FROM attachments
+         WHERE id IN (${placeholders}) AND user_id = ? AND conversation_id = ?
+           AND message_id IS NULL AND kind = 'image'`
+      )
+      .all(...attachmentIds, req.user.id, req.params.id);
+    if (owned.length !== attachmentIds.length) {
+      return res.status(400).json({ error: 'invalid attachment_ids' });
+    }
   }
 
   const endpoint = (process.env.LLM_ENDPOINT || '').replace(/\/$/, '');
@@ -56,14 +129,25 @@ router.post('/:id/chat', async (req, res) => {
     return res.status(503).json({ error: 'LLMエンドポイントが設定されていません（サーバーの .env を確認してください）' });
   }
 
-  db.prepare('INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)')
-    .run(req.params.id, 'user', content);
+  const userMessageId = db
+    .prepare('INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)')
+    .run(req.params.id, 'user', content).lastInsertRowid;
 
-  const history = db
-    .prepare('SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY id ASC')
-    .all(req.params.id)
-    .map((m) => ({ role: m.role, content: m.content }))
-    .filter((m) => m.content.trim() !== '');
+  if (attachmentIds.length > 0) {
+    const placeholders = attachmentIds.map(() => '?').join(',');
+    db.prepare(
+      `UPDATE attachments SET message_id = ? WHERE id IN (${placeholders}) AND user_id = ? AND conversation_id = ?`
+    ).run(userMessageId, ...attachmentIds, req.user.id, req.params.id);
+  }
+
+  const messageRows = db
+    .prepare('SELECT id, role, content FROM messages WHERE conversation_id = ? ORDER BY id ASC')
+    .all(req.params.id);
+  const imagesByMessage = loadImageAttachmentsByMessage(db, req.params.id, messageRows.map((m) => m.id));
+
+  const history = messageRows
+    .map((m) => ({ role: m.role, content: buildMessageContent(m.content, imagesByMessage.get(m.id) || []) }))
+    .filter((m) => (Array.isArray(m.content) ? m.content.length > 0 : m.content.trim() !== ''));
 
   const systemPrompt = resolveSystemPrompt(db, conversation, req.user.id);
   const messages = systemPrompt

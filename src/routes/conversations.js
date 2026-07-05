@@ -193,9 +193,34 @@ router.get('/:id/messages', (req, res) => {
   const messages = db
     .prepare('SELECT id, role, content, created_at FROM messages WHERE conversation_id = ? ORDER BY id ASC')
     .all(req.params.id);
+
+  const attachmentsByMessage = new Map();
+  if (messages.length > 0) {
+    const placeholders = messages.map(() => '?').join(',');
+    const attachmentRows = db
+      .prepare(
+        `SELECT id, message_id, kind, mime FROM attachments WHERE message_id IN (${placeholders})`
+      )
+      .all(...messages.map((m) => m.id));
+    for (const row of attachmentRows) {
+      if (!attachmentsByMessage.has(row.message_id)) attachmentsByMessage.set(row.message_id, []);
+      attachmentsByMessage.get(row.message_id).push({
+        id: row.id,
+        kind: row.kind,
+        mime: row.mime,
+        url: `/api/uploads/image/${row.id}`,
+      });
+    }
+  }
+
+  const messagesWithAttachments = messages.map((m) => ({
+    ...m,
+    attachments: attachmentsByMessage.get(m.id) || [],
+  }));
+
   res.json({
     conversation: { id: conversation.id, title: conversation.title, system_prompt: conversation.system_prompt || '' },
-    messages,
+    messages: messagesWithAttachments,
   });
 });
 

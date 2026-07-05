@@ -8,13 +8,10 @@ const multer = require('multer');
 const { getDb } = require('../db');
 const { authMiddleware } = require('../auth');
 const logger = require('../logger');
+const { DATA_DIR, UPLOAD_ROOT, resolveAttachmentFilePath } = require('../attachmentStorage');
 
 const router = express.Router();
 router.use(authMiddleware);
-
-// DB_PATH と同じ基準(データディレクトリ)を使い、アップロードもその配下に置く
-const DATA_DIR = path.resolve(path.dirname(process.env.DB_PATH || './data/plainchat.db'));
-const UPLOAD_ROOT = path.join(DATA_DIR, 'uploads');
 
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -105,9 +102,7 @@ router.get('/image/:id', (req, res) => {
     return res.status(404).json({ error: 'Not found' });
   }
 
-  // path列の値をそのまま結合せず、basenameで再構成してトラバーサルを防止
-  const filename = path.basename(attachment.path);
-  const filePath = path.join(UPLOAD_ROOT, String(attachment.user_id), filename);
+  const filePath = resolveAttachmentFilePath(attachment);
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'Not found' });
   }
