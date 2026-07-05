@@ -55,6 +55,22 @@ function migrate(db) {
 
     CREATE INDEX IF NOT EXISTS idx_messages_conversation_id
       ON messages (conversation_id, id);
+
+    CREATE TABLE IF NOT EXISTS attachments (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+      message_id      INTEGER REFERENCES messages(id) ON DELETE SET NULL,
+      kind            TEXT    NOT NULL DEFAULT 'image',
+      mime            TEXT    NOT NULL,
+      size            INTEGER NOT NULL,
+      path            TEXT    NOT NULL,
+      original_name   TEXT,
+      created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_attachments_conversation_id
+      ON attachments (conversation_id);
   `);
 
   // 既存DBには上記CREATE TABLEが効かないため、起動のたびに列の有無を確認して追加する(冪等)
