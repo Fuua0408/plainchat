@@ -9,6 +9,7 @@ const { initDb } = require('./db');
 const authRoutes = require('./routes/auth');
 const conversationsRoutes = require('./routes/conversations');
 const chatRoutes = require('./routes/chat');
+const settingsRoutes = require('./routes/settings');
 
 const app = express();
 const PORT = process.env.PORT || 18091;
@@ -22,6 +23,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/conversations', conversationsRoutes);
 app.use('/api/conversations', chatRoutes);
+app.use('/api/settings', settingsRoutes);
 
 app.use(express.static(path.join(__dirname, '..', 'public')));
 

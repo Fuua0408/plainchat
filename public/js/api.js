@@ -94,7 +94,28 @@ async function renameConversation(id, title) {
 
 async function getMessages(id) {
   const data = await apiJson(`/api/conversations/${id}/messages`);
-  return data.messages;
+  return data;
+}
+
+async function updateConversationSystemPrompt(id, systemPrompt) {
+  const data = await apiJson(`/api/conversations/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ system_prompt: systemPrompt }),
+  });
+  return data.conversation;
+}
+
+async function getGlobalSettings() {
+  const data = await apiJson('/api/settings');
+  return data.system_prompt;
+}
+
+async function updateGlobalSettings(systemPrompt) {
+  const data = await apiJson('/api/settings', {
+    method: 'PUT',
+    body: JSON.stringify({ system_prompt: systemPrompt }),
+  });
+  return data.system_prompt;
 }
 
 async function generateTitle(id) {

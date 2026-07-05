@@ -14,6 +14,8 @@ const newConversationBtn = document.getElementById('newConversationBtn');
 const conversationList = document.getElementById('conversationList');
 const logoutBtn = document.getElementById('logoutBtn');
 const themeToggleBtn = document.getElementById('themeToggleBtn');
+const settingsBtn = document.getElementById('settingsBtn');
+const conversationSettingsBtn = document.getElementById('conversationSettingsBtn');
 
 const messageList = document.getElementById('messageList');
 const chatForm = document.getElementById('chatForm');
@@ -24,10 +26,19 @@ const chatError = document.getElementById('chatError');
 const hljsLightTheme = document.getElementById('hljsLightTheme');
 const hljsDarkTheme = document.getElementById('hljsDarkTheme');
 
+const modalOverlay = document.getElementById('modalOverlay');
+const modalTitle = document.getElementById('modalTitle');
+const modalTextarea = document.getElementById('modalTextarea');
+const modalMessage = document.getElementById('modalMessage');
+const modalSaveBtn = document.getElementById('modalSaveBtn');
+const modalCloseBtn = document.getElementById('modalCloseBtn');
+
 let conversations = [];
 let currentConversationId = null;
+let currentConversationSystemPrompt = '';
 let sending = false;
 let currentAbortController = null;
+let modalMode = null; // 'global' | 'conversation'
 
 // ─────────────────────────────────────────────
 // ダークモード
@@ -63,6 +74,8 @@ function showChatView() {
   loginView.classList.remove('active');
   chatView.classList.add('active');
   currentConversationId = null;
+  currentConversationSystemPrompt = '';
+  conversationSettingsBtn.disabled = true;
   renderMessages([]);
 }
 
@@ -169,6 +182,8 @@ async function loadConversations() {
     conversations = await listConversations();
     if (currentConversationId && !conversations.some((c) => c.id === currentConversationId)) {
       currentConversationId = null;
+      currentConversationSystemPrompt = '';
+      conversationSettingsBtn.disabled = true;
       renderMessages([]);
     }
     renderConversationList();
@@ -206,6 +221,8 @@ async function handleDeleteConversation(id) {
     await deleteConversation(id);
     if (currentConversationId === id) {
       currentConversationId = null;
+      currentConversationSystemPrompt = '';
+      conversationSettingsBtn.disabled = true;
       renderMessages([]);
     }
     await loadConversations();
@@ -299,7 +316,9 @@ async function selectConversation(id) {
   updateActiveConversationHighlight();
   setChatError('');
   try {
-    const messages = await getMessages(id);
+    const { conversation, messages } = await getMessages(id);
+    currentConversationSystemPrompt = conversation.system_prompt || '';
+    conversationSettingsBtn.disabled = false;
     renderMessages(messages);
   } catch (e) {
     setChatError(e.message);
@@ -386,7 +405,8 @@ async function handleSend(e) {
         currentAbortController = null;
         setSending(false);
         try {
-          const messages = await getMessages(currentConversationId);
+          const { conversation, messages } = await getMessages(currentConversationId);
+          currentConversationSystemPrompt = conversation.system_prompt || '';
           renderMessages(messages);
         } catch (err) {
           setChatError(err.message);
@@ -400,6 +420,73 @@ async function handleSend(e) {
     setSending(false);
   }
 }
+
+// ─────────────────────────────────────────────
+// 設定モーダル(グローバル/会話別 共通)
+// ─────────────────────────────────────────────
+function setModalMessage(text, kind) {
+  modalMessage.textContent = text || '';
+  modalMessage.className = 'modal-message' + (kind ? ' ' + kind : '');
+}
+
+async function openGlobalSettingsModal() {
+  modalMode = 'global';
+  modalTitle.textContent = 'グローバル設定';
+  modalTextarea.placeholder = '例: 語尾に必ず「ですわ」を付けて応答してください';
+  modalTextarea.value = '';
+  setModalMessage('');
+  modalOverlay.classList.add('active');
+  modalTextarea.focus();
+  try {
+    modalTextarea.value = await getGlobalSettings();
+  } catch (e) {
+    setModalMessage(e.message, 'error');
+  }
+}
+
+function openConversationSettingsModal() {
+  if (!currentConversationId) return;
+  modalMode = 'conversation';
+  modalTitle.textContent = '会話設定';
+  modalTextarea.placeholder = '未設定（グローバル設定を使用）';
+  modalTextarea.value = currentConversationSystemPrompt;
+  setModalMessage('');
+  modalOverlay.classList.add('active');
+  modalTextarea.focus();
+}
+
+function closeModal() {
+  modalOverlay.classList.remove('active');
+  modalMode = null;
+}
+
+async function handleModalSave() {
+  const value = modalTextarea.value;
+  setModalMessage('');
+  try {
+    if (modalMode === 'global') {
+      modalTextarea.value = await updateGlobalSettings(value);
+    } else if (modalMode === 'conversation') {
+      const conv = await updateConversationSystemPrompt(currentConversationId, value);
+      currentConversationSystemPrompt = conv.system_prompt || '';
+      modalTextarea.value = currentConversationSystemPrompt;
+    }
+    setModalMessage('保存しました', 'success');
+  } catch (e) {
+    setModalMessage(e.message, 'error');
+  }
+}
+
+settingsBtn.addEventListener('click', openGlobalSettingsModal);
+conversationSettingsBtn.addEventListener('click', openConversationSettingsModal);
+modalCloseBtn.addEventListener('click', closeModal);
+modalSaveBtn.addEventListener('click', handleModalSave);
+modalOverlay.addEventListener('click', (e) => {
+  if (e.target === modalOverlay) closeModal();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && modalOverlay.classList.contains('active')) closeModal();
+});
 
 chatInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {

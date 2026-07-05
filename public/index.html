@@ -31,10 +31,14 @@
       <button id="newConversationBtn" type="button" class="new-conversation-btn">+ 新しい会話</button>
       <ul id="conversationList" class="conversation-list"></ul>
       <button id="themeToggleBtn" type="button" class="theme-toggle-btn">🌙 ダーク</button>
+      <button id="settingsBtn" type="button" class="settings-btn">⚙ 設定</button>
       <button id="logoutBtn" type="button" class="logout-btn">ログアウト</button>
     </aside>
 
     <main class="chat-pane">
+      <div class="chat-header">
+        <button id="conversationSettingsBtn" type="button" class="conversation-settings-btn" disabled>会話設定</button>
+      </div>
       <div id="messageList" class="message-list"></div>
       <p id="chatError" class="error-text"></p>
       <form id="chatForm" class="chat-input-form">
@@ -43,6 +47,22 @@
       </form>
     </main>
   </section>
+
+  <div id="modalOverlay" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2 id="modalTitle"></h2>
+        <button id="modalCloseBtn" type="button" class="modal-close-btn" aria-label="閉じる">×</button>
+      </div>
+      <div class="modal-body">
+        <textarea id="modalTextarea" rows="10"></textarea>
+        <p id="modalMessage" class="modal-message"></p>
+      </div>
+      <div class="modal-footer">
+        <button id="modalSaveBtn" type="button" class="modal-save-btn">保存</button>
+      </div>
+    </div>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js"></script>

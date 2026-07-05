@@ -16,10 +16,6 @@ router.param('id', (req, res, next, id) => {
   next();
 });
 
-function findOwnConversation(db, id, userId) {
-  return db.prepare('SELECT id FROM conversations WHERE id = ? AND user_id = ?').get(id, userId);
-}
-
 function sendEvent(res, event, data) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
@@ -28,10 +24,25 @@ function safeWrite(fn) {
   try { fn(); } catch (e) { /* client already disconnected */ }
 }
 
+// 会話ごとのsystem_promptが設定されていればそれを、なければユーザーのグローバル設定を使う。
+// どちらも空ならnull(systemメッセージを付けない)
+function resolveSystemPrompt(db, conversation, userId) {
+  if (conversation.system_prompt && conversation.system_prompt.trim() !== '') {
+    return conversation.system_prompt;
+  }
+  const user = db.prepare('SELECT system_prompt FROM users WHERE id = ?').get(userId);
+  if (user?.system_prompt && user.system_prompt.trim() !== '') {
+    return user.system_prompt;
+  }
+  return null;
+}
+
 // POST /api/conversations/:id/chat
 router.post('/:id/chat', async (req, res) => {
   const db = getDb();
-  const conversation = findOwnConversation(db, req.params.id, req.user.id);
+  const conversation = db
+    .prepare('SELECT id, system_prompt FROM conversations WHERE id = ? AND user_id = ?')
+    .get(req.params.id, req.user.id);
   if (!conversation) return res.status(404).json({ error: 'Not found' });
 
   const { content } = req.body || {};
@@ -52,6 +63,11 @@ router.post('/:id/chat', async (req, res) => {
     .all(req.params.id)
     .map((m) => ({ role: m.role, content: m.content }))
     .filter((m) => m.content.trim() !== '');
+
+  const systemPrompt = resolveSystemPrompt(db, conversation, req.user.id);
+  const messages = systemPrompt
+    ? [{ role: 'system', content: systemPrompt }, ...history]
+    : history;
 
   const url         = endpoint.replace(/\/chat\/completions$/, '') + '/chat/completions';
   const apiKey      = process.env.LLM_API_KEY || 'sk-fake';
@@ -109,7 +125,7 @@ router.post('/:id/chat', async (req, res) => {
       },
       signal: controller.signal,
       body: JSON.stringify({
-        messages: history,
+        messages,
         stream: true,
         max_tokens: maxTok,
         temperature: temp,

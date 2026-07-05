@@ -28,16 +28,18 @@ function migrate(db) {
       username      TEXT    NOT NULL UNIQUE,
       password_hash TEXT    NOT NULL,
       is_admin      INTEGER NOT NULL DEFAULT 0,
+      system_prompt TEXT,
       created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
       updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS conversations (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      title      TEXT    NOT NULL DEFAULT '新しい会話',
-      created_at TEXT    NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT    NOT NULL DEFAULT (datetime('now'))
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      title         TEXT    NOT NULL DEFAULT '新しい会話',
+      system_prompt TEXT,
+      created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE INDEX IF NOT EXISTS idx_conversations_user_updated
@@ -54,6 +56,19 @@ function migrate(db) {
     CREATE INDEX IF NOT EXISTS idx_messages_conversation_id
       ON messages (conversation_id, id);
   `);
+
+  // 既存DBには上記CREATE TABLEが効かないため、起動のたびに列の有無を確認して追加する(冪等)
+  ensureColumn(db, 'users', 'system_prompt', 'TEXT');
+  ensureColumn(db, 'conversations', 'system_prompt', 'TEXT');
+}
+
+function ensureColumn(db, table, column, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+  const exists = columns.some((c) => c.name === column);
+  if (!exists) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    logger.info(`db migrate: added column ${table}.${column}`);
+  }
 }
 
 function seedInitialUser(db) {

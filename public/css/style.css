@@ -224,6 +224,7 @@ html, body {
 }
 
 .theme-toggle-btn,
+.settings-btn,
 .logout-btn {
   flex: none;
   padding: 8px;
@@ -236,6 +237,7 @@ html, body {
 }
 
 .theme-toggle-btn:hover,
+.settings-btn:hover,
 .logout-btn:hover {
   background: var(--hover-bg);
 }
@@ -245,6 +247,34 @@ html, body {
   display: flex;
   flex-direction: column;
   min-width: 0;
+}
+
+.chat-header {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-surface);
+}
+
+.conversation-settings-btn {
+  padding: 6px 12px;
+  font-size: 13px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.conversation-settings-btn:hover:not(:disabled) {
+  background: var(--hover-bg);
+}
+
+.conversation-settings-btn:disabled {
+  color: var(--text-secondary);
+  cursor: not-allowed;
 }
 
 .message-list {
@@ -448,4 +478,113 @@ html, body {
 #chatError {
   padding: 0 20px;
   color: var(--error-color);
+}
+
+/* 設定モーダル(共通) */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal-overlay.active {
+  display: flex;
+}
+
+.modal-box {
+  width: 480px;
+  max-width: 90vw;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.modal-close-btn {
+  border: none;
+  background: none;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+.modal-close-btn:hover {
+  color: var(--text-primary);
+}
+
+.modal-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.modal-body textarea {
+  width: 100%;
+  resize: vertical;
+  padding: 10px;
+  font-size: 14px;
+  font-family: inherit;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.modal-message {
+  min-height: 1em;
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.modal-message.success {
+  color: var(--accent);
+}
+
+.modal-message.error {
+  color: var(--error-color);
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+.modal-save-btn {
+  padding: 8px 20px;
+  font-size: 14px;
+  border: none;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+.modal-save-btn:hover {
+  background: var(--accent-hover);
 }

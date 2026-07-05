@@ -48,24 +48,42 @@ router.post('/', (req, res) => {
   res.status(201).json({ conversation });
 });
 
+const SYSTEM_PROMPT_MAX_LEN = 20000;
+
 // PATCH /api/conversations/:id
 router.patch('/:id', (req, res) => {
-  const { title } = req.body || {};
-  if (typeof title !== 'string' || title.trim() === '' || title.length > 200) {
-    return res.status(400).json({ error: 'title is required and must be 1-200 characters' });
+  const { title, system_prompt } = req.body || {};
+  const hasTitle = title !== undefined;
+  const hasSystemPrompt = system_prompt !== undefined;
+
+  if (!hasTitle && !hasSystemPrompt) {
+    return res.status(400).json({ error: 'title or system_prompt is required' });
+  }
+  if (hasTitle && (typeof title !== 'string' || title.trim() === '' || title.length > 200)) {
+    return res.status(400).json({ error: 'title must be 1-200 characters' });
+  }
+  if (hasSystemPrompt && (typeof system_prompt !== 'string' || system_prompt.length > SYSTEM_PROMPT_MAX_LEN)) {
+    return res.status(400).json({ error: `system_prompt must be a string up to ${SYSTEM_PROMPT_MAX_LEN} characters` });
   }
 
   const db = getDb();
   const existing = findOwnConversation(db, req.params.id, req.user.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
 
-  db.prepare("UPDATE conversations SET title = ?, updated_at = datetime('now') WHERE id = ?")
-    .run(title, req.params.id);
+  if (hasTitle) {
+    db.prepare("UPDATE conversations SET title = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(title, req.params.id);
+  }
+  if (hasSystemPrompt) {
+    const value = system_prompt === '' ? null : system_prompt;
+    db.prepare("UPDATE conversations SET system_prompt = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(value, req.params.id);
+  }
 
   const conversation = db
-    .prepare('SELECT id, title, created_at, updated_at FROM conversations WHERE id = ?')
+    .prepare('SELECT id, title, system_prompt, created_at, updated_at FROM conversations WHERE id = ?')
     .get(req.params.id);
-  res.json({ conversation });
+  res.json({ conversation: { ...conversation, system_prompt: conversation.system_prompt || '' } });
 });
 
 // DELETE /api/conversations/:id
@@ -81,13 +99,18 @@ router.delete('/:id', (req, res) => {
 // GET /api/conversations/:id/messages
 router.get('/:id/messages', (req, res) => {
   const db = getDb();
-  const existing = findOwnConversation(db, req.params.id, req.user.id);
-  if (!existing) return res.status(404).json({ error: 'Not found' });
+  const conversation = db
+    .prepare('SELECT id, title, system_prompt FROM conversations WHERE id = ? AND user_id = ?')
+    .get(req.params.id, req.user.id);
+  if (!conversation) return res.status(404).json({ error: 'Not found' });
 
   const messages = db
     .prepare('SELECT id, role, content, created_at FROM messages WHERE conversation_id = ? ORDER BY id ASC')
     .all(req.params.id);
-  res.json({ messages });
+  res.json({
+    conversation: { id: conversation.id, title: conversation.title, system_prompt: conversation.system_prompt || '' },
+    messages,
+  });
 });
 
 // POST /api/conversations/:id/generate-title
