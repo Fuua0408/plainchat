@@ -4,6 +4,7 @@ const express = require('express');
 const { getDb } = require('../db');
 const { authMiddleware } = require('../auth');
 const logger = require('../logger');
+const { expandPromptTemplate } = require('../promptTemplate');
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -66,7 +67,7 @@ router.post('/:id/chat', async (req, res) => {
 
   const systemPrompt = resolveSystemPrompt(db, conversation, req.user.id);
   const messages = systemPrompt
-    ? [{ role: 'system', content: systemPrompt }, ...history]
+    ? [{ role: 'system', content: expandPromptTemplate(systemPrompt) }, ...history]
     : history;
 
   const url         = endpoint.replace(/\/chat\/completions$/, '') + '/chat/completions';
