@@ -9,26 +9,30 @@
 - GitHub Public(MIT License)。機密・実環境情報(IP/ホスト名等)はコミット禁止
 
 ## 現在地
-- **フェーズ**: Phase 3 の①(画像→Vision)+②(テキストファイル添付)完成、磨き込みまで完了。
-  次タスクは未確定(Phase 3をここで締める / WEB検索へ)
+- **フェーズ**: Phase 3 完了(①画像→Vision / ②テキストファイル添付 / 磨き込み / 後片付け)。
+  次は WEB検索を別スレッドで設計相談
 - **完了**: Phase 1(001〜007)、Phase 2(008〜012)、
-  013 アップロード基盤 / 014 チャットのマルチモーダル化 / 015 フロント画像添付(複数) /
-  空応答対応(reasoning budget、インフラ設定) /
-  016 ファイル添付基盤 / 017 チャットへのファイル注入 / 018 フロントファイル添付(合算4混在) /
-  019 履歴attachmentにoriginal_name・size追加 / 020 履歴チップの実名表示 /
-  021 ドラッグ&ドロップ添付 / 022 ユーザーバブル内チップの視認性修正
-- **インフラ**: n_ctx=81920 / LLM_MAX_TOKENS=32768。MTP有効前提。
-  Vision素通し(単一・複数)確認済み。textgen-webuiがllama.cppを内部起動し、ローダの
-  extra-flags に `--reasoning-budget 6000 --reasoning-budget-message "..."` を設定(空応答解消)
-- **既知の外部課題(回避済み)**: llama.cpp の fattn.cu CUDA fatal error
-  (Gemma4+fattn、Issue #24440/#24324系)。2GPUの tensor-split で再発するため
-  `--split-mode layer` で回避運用中。②以降でCTXが伸びる際はVRAM収まりを監視
-- **次タスク**: 未確定。Phase 3を①②で締めるか、WEB検索(候補として登録済み)に進むかを相談
+  Phase 3 = 013 アップロード基盤 / 014 マルチモーダル化 / 015 フロント画像添付(複数) /
+  空応答対応(reasoning budget) / 016 ファイル添付基盤 / 017 ファイル注入 /
+  018 フロントファイル添付(合算4混在) / 019 attachmentメタ追加 / 020 履歴チップ実名 /
+  021 D&D / 022 チップ視認性 / 023 削除時クリーンアップ+孤児回収
+- **インフラ**: n_ctx=81920 / LLM_MAX_TOKENS=32768。MTP有効前提。Vision素通し(単一・複数)確認済み。
+  textgen-webuiがllama.cppを内部起動、extra-flags に
+  `--reasoning-budget 6000 --reasoning-budget-message "..."`(空応答解消)
+- **既知の外部課題(回避済み)**: llama.cpp の fattn.cu CUDA fatal error(Gemma4+fattn、
+  Issue #24440/#24324系)。2GPUの tensor-split で再発するため `--split-mode layer` で回避運用中
+- **次タスク**: WEB検索の設計相談(別スレッドで新規開始)。主要論点は下記
+- **WEB検索の論点メモ(次スレッド用)**:
+  - 位置づけ: 「Phase 3以降の候補」登録済み。Phase 4「外部ツール呼び出し」と重複するため線引きが要る
+  - 検索プロバイダの選定(API・コスト・プライバシー。自宅運用として何を使うか)
+  - 呼び出しトリガ: 手動トグル か モデルのツール呼び出し/自動判定 か
+  - 結果の注入方法と引用表示、コンテキスト消費(81920とreasoning budgetとの兼ね合い)
+  - 既存のグローバルSystem Prompt内に温存済みの「web search誘導」記述との接続
 - **Phase 3スコープメモ**: ①=画像+Vision-QA(合算4)。②=テキストファイル(txt/md/csv/json)の
-  添付・要約・QA。③長文資料相談は②の注入方式に吸収済み。PDF/OCR/docx/pptxは見送り(後続レバー)。
-  ロールプレイ機能は持ち込まない。添付ファイルの削除時クリーンアップは別タスク
-- **運用メモ**: グローバル設定にClaude系プロンプト改変版(約11,600字)を適用。長文でも空応答は
-  budgetで解消済み。budget値(現6000)はレイテンシ/推論深度を見て調整可
+  添付・要約・QA。③は②の注入方式に吸収。PDF/OCR/docx/pptxは見送り(後続レバー)。
+  ロールプレイ機能は持ち込まない
+- **運用メモ**: グローバル設定にClaude系プロンプト改変版(約11,600字)。長文でも空応答はbudgetで
+  解消済み。budget値(現6000)はレイテンシ/推論深度を見て調整可
 
 ## リポジトリ構成
 - src/index.js            : Expressエントリポイント(ポート 18091)
@@ -36,6 +40,7 @@
 - src/db.js               : SQLite接続・スキーマ初期化・初期ユーザーシード
 - src/auth.js             : JWT認可ミドルウェア
 - src/attachmentStorage.js    : data/の絶対パス化とattachment→ファイルパス解決(013〜017共有)
+- src/attachmentCleanup.js     : 起動時の孤児アップロード回収(023)
 - src/routes/auth.js      : ログイン/パスワード変更/me
 - src/routes/conversations.js : 会話CRUD+メッセージ一覧
 - src/routes/chat.js      : SSEチャット(ユーザー発話保存→LLM中継→応答保存)
