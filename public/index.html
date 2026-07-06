@@ -54,7 +54,7 @@
       <button id="logoutBtn" type="button" class="logout-btn">ログアウト</button>
     </aside>
 
-    <main class="chat-pane">
+    <main id="chatPane" class="chat-pane">
       <div class="chat-header">
         <button id="conversationSettingsBtn" type="button" class="conversation-settings-btn" disabled>会話設定</button>
       </div>
@@ -69,6 +69,7 @@
         <textarea id="chatInput" placeholder="メッセージを入力（Enterで送信、Shift+Enterで改行）" rows="2"></textarea>
         <button id="sendBtn" type="submit">送信</button>
       </form>
+      <div id="dragDropOverlay" class="drag-drop-overlay" hidden>ファイルをドロップして添付</div>
     </main>
   </section>
 

@@ -33,6 +33,8 @@ const attachInput = document.getElementById('attachInput');
 const attachFileBtn = document.getElementById('attachFileBtn');
 const attachFileInput = document.getElementById('attachFileInput');
 const attachPreviewList = document.getElementById('attachPreviewList');
+const chatPane = document.getElementById('chatPane');
+const dragDropOverlay = document.getElementById('dragDropOverlay');
 
 const hljsLightTheme = document.getElementById('hljsLightTheme');
 const hljsDarkTheme = document.getElementById('hljsDarkTheme');
@@ -644,6 +646,89 @@ attachBtn.addEventListener('click', () => attachInput.click());
 attachInput.addEventListener('change', handleImageInputChange);
 attachFileBtn.addEventListener('click', () => attachFileInput.click());
 attachFileInput.addEventListener('change', handleFileInputChange);
+
+// ─────────────────────────────────────────────
+// ドラッグ&ドロップでの添付(021)。既存の addAttachments へ合流させるだけの入口
+// ─────────────────────────────────────────────
+const TEXT_FILE_EXTS = ['txt', 'md', 'csv', 'json'];
+const TEXT_FILE_MIMES = ['text/plain', 'text/markdown', 'text/csv', 'application/json'];
+
+// image/* はMIMEで、テキスト系は拡張子(ブラウザ/OSによってMIMEが空になりうるため)で判定する
+function classifyDroppedFile(file) {
+  if (file.type && file.type.startsWith('image/')) return 'image';
+  const name = file.name.toLowerCase();
+  const ext = name.slice(name.lastIndexOf('.') + 1);
+  if (TEXT_FILE_EXTS.includes(ext) || TEXT_FILE_MIMES.includes(file.type)) return 'file';
+  return null;
+}
+
+async function handleDroppedFiles(files) {
+  setChatError('');
+  const images = [];
+  const textFiles = [];
+  const unsupportedNames = [];
+  for (const file of files) {
+    const kind = classifyDroppedFile(file);
+    if (kind === 'image') images.push(file);
+    else if (kind === 'file') textFiles.push(file);
+    else unsupportedNames.push(file.name);
+  }
+
+  if (images.length > 0) await addAttachments(images, 'image');
+  if (textFiles.length > 0) await addAttachments(textFiles, 'file');
+
+  if (unsupportedNames.length > 0) {
+    const msg = `対応していない形式のため追加できませんでした: ${unsupportedNames.join(', ')}`;
+    setChatError(chatError.textContent ? `${chatError.textContent} / ${msg}` : msg);
+  }
+}
+
+// dragenter/dragleaveは子要素をまたぐたびに発火するため、カウンタで最外周の出入りだけを見る
+let dragCounter = 0;
+
+function showDragOverlay() {
+  chatPane.classList.add('drag-over');
+  dragDropOverlay.hidden = false;
+}
+
+function hideDragOverlay() {
+  dragCounter = 0;
+  chatPane.classList.remove('drag-over');
+  dragDropOverlay.hidden = true;
+}
+
+chatPane.addEventListener('dragenter', (e) => {
+  e.preventDefault();
+  if (sending) return;
+  dragCounter += 1;
+  showDragOverlay();
+});
+
+chatPane.addEventListener('dragover', (e) => {
+  // ブラウザ既定の「ファイルを開く」挙動を抑止するためdragoverでも常にpreventDefaultする
+  e.preventDefault();
+});
+
+chatPane.addEventListener('dragleave', (e) => {
+  e.preventDefault();
+  if (sending) return;
+  dragCounter = Math.max(0, dragCounter - 1);
+  if (dragCounter === 0) hideDragOverlay();
+});
+
+chatPane.addEventListener('drop', (e) => {
+  e.preventDefault();
+  const wasSending = sending;
+  hideDragOverlay();
+  if (wasSending) return; // 受信中は添付ボタン無効と同じ扱いでドロップを無視する
+  const files = Array.from(e.dataTransfer ? e.dataTransfer.files : []);
+  if (files.length === 0) return;
+  handleDroppedFiles(files);
+});
+
+// チャットペイン外への誤ドロップでページ遷移(ファイルを開く)しないようにする安全網
+window.addEventListener('dragover', (e) => e.preventDefault());
+window.addEventListener('drop', (e) => e.preventDefault());
 
 // ─────────────────────────────────────────────
 // 送受信
