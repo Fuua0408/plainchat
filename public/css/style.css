@@ -706,6 +706,11 @@ html, body {
   opacity: 0.7;
 }
 
+/* ユーザーバブル(白文字)の継承を断ち、チップ自身の背景に対して読める色に固定する */
+.message-user .message-file-chip {
+  color: var(--text-primary);
+}
+
 .file-preview {
   margin: 0;
   max-height: 240px;
