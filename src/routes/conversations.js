@@ -199,7 +199,7 @@ router.get('/:id/messages', (req, res) => {
     const placeholders = messages.map(() => '?').join(',');
     const attachmentRows = db
       .prepare(
-        `SELECT id, message_id, kind, mime FROM attachments WHERE message_id IN (${placeholders})`
+        `SELECT id, message_id, kind, mime, original_name, size FROM attachments WHERE message_id IN (${placeholders})`
       )
       .all(...messages.map((m) => m.id));
     for (const row of attachmentRows) {
@@ -209,6 +209,8 @@ router.get('/:id/messages', (req, res) => {
         kind: row.kind,
         mime: row.mime,
         url: row.kind === 'image' ? `/api/uploads/image/${row.id}` : `/api/uploads/file/${row.id}`,
+        original_name: row.original_name,
+        size: row.size,
       });
     }
   }
