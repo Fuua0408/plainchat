@@ -6,6 +6,7 @@ const path = require('path');
 const express = require('express');
 const logger = require('./logger');
 const { initDb } = require('./db');
+const { cleanupOrphanUploads } = require('./attachmentCleanup');
 const authRoutes = require('./routes/auth');
 const conversationsRoutes = require('./routes/conversations');
 const chatRoutes = require('./routes/chat');
@@ -30,6 +31,12 @@ app.use('/api/uploads', uploadsRoutes);
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 initDb();
+
+try {
+  cleanupOrphanUploads();
+} catch (e) {
+  logger.error('attachment cleanup: unexpected failure at startup, continuing', { error: e.message });
+}
 
 app.listen(PORT, () => {
   logger.info(`plainchat server listening on port ${PORT}`);

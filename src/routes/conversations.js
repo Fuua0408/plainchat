@@ -1,8 +1,10 @@
 'use strict';
 
+const fs = require('fs');
 const express = require('express');
 const { getDb } = require('../db');
 const { authMiddleware } = require('../auth');
+const { resolveAttachmentFilePath } = require('../attachmentStorage');
 const logger = require('../logger');
 
 const router = express.Router();
@@ -177,6 +179,25 @@ router.delete('/:id', (req, res) => {
   const db = getDb();
   const existing = findOwnConversation(db, req.params.id, req.user.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
+
+  // attachments行はconversations削除のON DELETE CASCADEで消えるため、
+  // 実ファイルだけを先に(行が消える前に)解決して削除しておく
+  const attachments = db
+    .prepare('SELECT id, user_id, path FROM attachments WHERE conversation_id = ?')
+    .all(req.params.id);
+  for (const attachment of attachments) {
+    const filePath = resolveAttachmentFilePath(attachment);
+    try {
+      fs.unlinkSync(filePath);
+    } catch (e) {
+      // 欠損やunlink失敗は致命エラーにせず、ログに残して会話削除自体は続行する
+      logger.warn('conversation delete: attachment file missing or removal failed', {
+        attachmentId: attachment.id,
+        path: filePath,
+        error: e.message,
+      });
+    }
+  }
 
   db.prepare('DELETE FROM conversations WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
