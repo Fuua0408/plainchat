@@ -56,7 +56,7 @@ const MAX_ATTACHMENTS = 4;
 let selectedAttachments = []; // [{ type: 'image', file, dataUrl } | { type: 'file', file }]
 let messageObjectUrls = []; // 履歴表示用に生成したobjectURL(再描画時にrevokeする)
 
-// 履歴のfile添付にはoriginal_nameが含まれない(013〜017のAPI仕様)ため、mimeから種別ラベルを補う
+// 履歴のfile添付は original_name が null の場合があり(019参照)、その時だけmimeから種別ラベルを補う
 const FILE_MIME_LABEL = {
   'text/plain': 'テキストファイル (.txt)',
   'text/markdown': 'Markdownファイル (.md)',
@@ -439,9 +439,9 @@ function createMessageAttachmentsEl(items) {
   return wrap;
 }
 
-// message.attachments(id, kind, mime, url)から表示用item配列を組み立てる。
-// 画像はBlob objectURLへ変換して即時表示、ファイルはmimeベースの種別ラベルのみ
-// (履歴APIはoriginal_nameを返さないため、ファイル名までは復元できない)
+// message.attachments(id, kind, mime, url, original_name, size)から表示用item配列を組み立てる。
+// 画像はBlob objectURLへ変換して即時表示、ファイルは original_name があれば実名を使い、
+// 無ければ(null/空)mimeベースの種別ラベルにフォールバックする
 async function buildAttachmentItems(attachments) {
   const items = [];
   for (const a of attachments || []) {
@@ -454,7 +454,16 @@ async function buildAttachmentItems(attachments) {
         console.warn('attachment fetch failed:', err.message);
       }
     } else if (a.kind === 'file') {
-      items.push({ type: 'file', label: FILE_MIME_LABEL[a.mime] || 'ファイル', url: a.url });
+      const item = { type: 'file', url: a.url };
+      if (a.original_name) {
+        item.name = a.original_name;
+      } else {
+        item.label = FILE_MIME_LABEL[a.mime] || 'ファイル';
+      }
+      if (typeof a.size === 'number') {
+        item.size = formatFileSize(a.size);
+      }
+      items.push(item);
     }
   }
   return items;
