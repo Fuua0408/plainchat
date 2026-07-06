@@ -208,7 +208,7 @@ router.get('/:id/messages', (req, res) => {
         id: row.id,
         kind: row.kind,
         mime: row.mime,
-        url: `/api/uploads/image/${row.id}`,
+        url: row.kind === 'image' ? `/api/uploads/image/${row.id}` : `/api/uploads/file/${row.id}`,
       });
     }
   }

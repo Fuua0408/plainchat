@@ -53,32 +53,65 @@ function buildImageDataUrl(attachment) {
   }
 }
 
-// 会話中の各messageに、紐づく画像attachments(id, mime, path, user_id)をまとめて付与する
-function loadImageAttachmentsByMessage(db, conversationId, messageIds) {
+const FILE_TEXT_MAX_CHARS = 40000;
+
+// テキストファイルattachmentの本文を読み込み、上限超過分は切り詰めて省略を明示する。
+// 読み込みに失敗した場合はそのファイルのみ諦め、送信自体は継続する
+function buildFileText(attachment) {
+  try {
+    const filePath = resolveAttachmentFilePath(attachment);
+    const body = fs.readFileSync(filePath, 'utf8');
+    let text = body;
+    if (body.length > FILE_TEXT_MAX_CHARS) {
+      text = body.slice(0, FILE_TEXT_MAX_CHARS) +
+        `\n…(${FILE_TEXT_MAX_CHARS}文字で切り詰め。元は${body.length}文字)`;
+    }
+    return `[添付ファイル: ${attachment.original_name}]\n${text}`;
+  } catch (e) {
+    logger.warn('chat: failed to read attachment file', { id: attachment.id, error: e.message });
+    return null;
+  }
+}
+
+// 会話中の各messageに、紐づく画像・ファイルattachments(id, mime, path, user_id, original_name)を
+// kind別にまとめて付与する
+function loadAttachmentsByMessage(db, conversationId, messageIds) {
   const byMessage = new Map();
   if (messageIds.length === 0) return byMessage;
 
   const placeholders = messageIds.map(() => '?').join(',');
   const rows = db
     .prepare(
-      `SELECT id, message_id, mime, path, user_id FROM attachments
-       WHERE conversation_id = ? AND kind = 'image' AND message_id IN (${placeholders})`
+      `SELECT id, message_id, kind, mime, path, user_id, original_name FROM attachments
+       WHERE conversation_id = ? AND kind IN ('image', 'file') AND message_id IN (${placeholders})`
     )
     .all(conversationId, ...messageIds);
 
   for (const row of rows) {
-    if (!byMessage.has(row.message_id)) byMessage.set(row.message_id, []);
-    byMessage.get(row.message_id).push(row);
+    if (!byMessage.has(row.message_id)) byMessage.set(row.message_id, { images: [], files: [] });
+    byMessage.get(row.message_id)[row.kind === 'image' ? 'images' : 'files'].push(row);
   }
   return byMessage;
 }
 
+// userテキストと、そのメッセージに紐づくファイル添付の本文をまとめて1つのテキストにする
+function buildMessageText(text, files) {
+  const parts = [];
+  if (text.trim() !== '') parts.push(text);
+  for (const file of files) {
+    const fileText = buildFileText(file);
+    if (fileText) parts.push(fileText);
+  }
+  return parts.join('\n');
+}
+
 // messageのcontentを、画像attachmentの有無に応じて文字列 or マルチモーダル配列に組み立てる
-function buildMessageContent(text, images) {
-  if (images.length === 0) return text;
+function buildMessageContent(text, images, files) {
+  const combinedText = buildMessageText(text, files);
+  if (images.length === 0) return combinedText;
 
   const parts = [];
-  if (text.trim() !== '') parts.push({ type: 'text', text });
+  if (combinedText.trim() !== '') parts.push({ type: 'text', text: combinedText });
   for (const image of images) {
     const url = buildImageDataUrl(image);
     if (url) parts.push({ type: 'image_url', image_url: { url } });
@@ -116,7 +149,7 @@ router.post('/:id/chat', async (req, res) => {
       .prepare(
         `SELECT id FROM attachments
          WHERE id IN (${placeholders}) AND user_id = ? AND conversation_id = ?
-           AND message_id IS NULL AND kind = 'image'`
+           AND message_id IS NULL AND kind IN ('image', 'file')`
       )
       .all(...attachmentIds, req.user.id, req.params.id);
     if (owned.length !== attachmentIds.length) {
@@ -143,11 +176,15 @@ router.post('/:id/chat', async (req, res) => {
   const messageRows = db
     .prepare('SELECT id, role, content FROM messages WHERE conversation_id = ? ORDER BY id ASC')
     .all(req.params.id);
-  const imagesByMessage = loadImageAttachmentsByMessage(db, req.params.id, messageRows.map((m) => m.id));
+  const attachmentsByMessage = loadAttachmentsByMessage(db, req.params.id, messageRows.map((m) => m.id));
 
   const history = messageRows
-    .map((m) => ({ role: m.role, content: buildMessageContent(m.content, imagesByMessage.get(m.id) || []) }))
-    .filter((m) => (Array.isArray(m.content) ? m.content.length > 0 : m.content.trim() !== ''));
+    .map((m) => {
+      const atts = attachmentsByMessage.get(m.id) || { images: [], files: [] };
+      return { role: m.role, text: m.content, images: atts.images, files: atts.files };
+    })
+    .filter((m) => m.text.trim() !== '' || m.images.length > 0 || m.files.length > 0)
+    .map((m) => ({ role: m.role, content: buildMessageContent(m.text, m.images, m.files) }));
 
   const systemPrompt = resolveSystemPrompt(db, conversation, req.user.id);
   const messages = systemPrompt
