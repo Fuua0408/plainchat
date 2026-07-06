@@ -9,31 +9,37 @@
 - GitHub Public(MIT License)。機密・実環境情報(IP/ホスト名等)はコミット禁止
 
 ## 現在地
-- **フェーズ**: Phase 3 の①(画像→Vision)完成、空応答対応も完了。次は Phase 3 ②(ファイル添付)の設計相談へ
+- **フェーズ**: Phase 3 の①(画像→Vision)+②(テキストファイル添付)完成、磨き込みまで完了。
+  次タスクは未確定(Phase 3をここで締める / WEB検索へ)
 - **完了**: Phase 1(001〜007)、Phase 2(008〜012)、
-  013 アップロード基盤、014 チャットのマルチモーダル対応、015 フロント添付UI(複数画像対応)、
-  空応答対応(reasoning budget、コード変更なし・インフラ設定)
-- **インフラ**: n_ctx=81920 / LLM_MAX_TOKENS=32768。MTP有効前提。Vision素通し(単一・複数)確認済み。
-  textgen-webuiがllama.cppを内部起動、ローダの extra-flags に `--reasoning-budget 6000` を設定
-  (思考がmax_tokensを食い尽くす空応答を解消。DECISIONS 2026-07-05参照)
-- **次タスク**: Phase 3 ② ファイル添付(PDF/テキスト)の要約・QA。着手前にチャットで設計・分解を相談
-- **Phase 3スコープメモ**: ①は画像+Vision-QA(複数画像・上限4枚)。③長文資料相談は②の使い方として吸収想定。
-  WEB検索は候補。ロールプレイ機能は持ち込まない。添付ファイルの削除時クリーンアップは別タスク
+  013 アップロード基盤 / 014 チャットのマルチモーダル化 / 015 フロント画像添付(複数) /
+  空応答対応(reasoning budget、インフラ設定) /
+  016 ファイル添付基盤 / 017 チャットへのファイル注入 / 018 フロントファイル添付(合算4混在) /
+  019 履歴attachmentにoriginal_name・size追加 / 020 履歴チップの実名表示 /
+  021 ドラッグ&ドロップ添付 / 022 ユーザーバブル内チップの視認性修正
+- **インフラ**: n_ctx=81920 / LLM_MAX_TOKENS=32768。MTP有効前提。
+  Vision素通し(単一・複数)確認済み。textgen-webuiがllama.cppを内部起動し、ローダの
+  extra-flags に `--reasoning-budget 6000 --reasoning-budget-message "..."` を設定(空応答解消)
+- **既知の外部課題(回避済み)**: llama.cpp の fattn.cu CUDA fatal error
+  (Gemma4+fattn、Issue #24440/#24324系)。2GPUの tensor-split で再発するため
+  `--split-mode layer` で回避運用中。②以降でCTXが伸びる際はVRAM収まりを監視
+- **次タスク**: 未確定。Phase 3を①②で締めるか、WEB検索(候補として登録済み)に進むかを相談
+- **Phase 3スコープメモ**: ①=画像+Vision-QA(合算4)。②=テキストファイル(txt/md/csv/json)の
+  添付・要約・QA。③長文資料相談は②の注入方式に吸収済み。PDF/OCR/docx/pptxは見送り(後続レバー)。
+  ロールプレイ機能は持ち込まない。添付ファイルの削除時クリーンアップは別タスク
 - **運用メモ**: グローバル設定にClaude系プロンプト改変版(約11,600字)を適用。長文でも空応答は
   budgetで解消済み。budget値(現6000)はレイテンシ/推論深度を見て調整可
-- **既知の外部課題(回避済み)**: llama.cpp の fattn.cu CUDA fatal error
-  (Gemma4+fattn、Issue #24440/#24324系)。2GPUの tensor-split で再発するため、
-  **--split-mode layer** で回避運用中。llama.cpp更新のみでは根治せず。
-  ②以降でコンテキストが伸びる際はVRAM収まりを監視
 
 ## リポジトリ構成
 - src/index.js            : Expressエントリポイント(ポート 18091)
 - src/logger.js           : 簡易ロガー
 - src/db.js               : SQLite接続・スキーマ初期化・初期ユーザーシード
 - src/auth.js             : JWT認可ミドルウェア
+- src/attachmentStorage.js    : data/の絶対パス化とattachment→ファイルパス解決(013〜017共有)
 - src/routes/auth.js      : ログイン/パスワード変更/me
 - src/routes/conversations.js : 会話CRUD+メッセージ一覧
 - src/routes/chat.js      : SSEチャット(ユーザー発話保存→LLM中継→応答保存)
+- src/routes/uploads.js   : 画像・ファイルのアップロード/配信API
 - public/                 : フロントエンド(素のHTML/CSS/JS、CDNでmarked/DOMPurify/highlight.js)
 - data/                   : SQLite DB等(gitignore対象)
 - prompts/queue/ , done/  : 実装プロンプト(未実行/実行済み)
