@@ -64,6 +64,8 @@
       <form id="chatForm" class="chat-input-form">
         <input id="attachInput" type="file" accept="image/*" multiple hidden>
         <button id="attachBtn" type="button" class="attach-btn" title="画像を添付" aria-label="画像を添付">📎</button>
+        <input id="attachFileInput" type="file" accept=".txt,.md,.csv,.json,text/plain,text/markdown,text/csv,application/json" multiple hidden>
+        <button id="attachFileBtn" type="button" class="attach-btn" title="ファイルを添付" aria-label="ファイルを添付">📄</button>
         <textarea id="chatInput" placeholder="メッセージを入力（Enterで送信、Shift+Enterで改行）" rows="2"></textarea>
         <button id="sendBtn" type="submit">送信</button>
       </form>

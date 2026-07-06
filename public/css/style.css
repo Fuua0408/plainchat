@@ -579,8 +579,60 @@ html, body {
   background: rgba(0, 0, 0, 0.8);
 }
 
-/* メッセージ内の画像(送信プレビュー・履歴の両方で使用) */
-.message-images {
+/* ファイル添付: 送信前プレビューのチップ */
+.attach-chip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  height: 64px;
+  padding: 6px 28px 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.attach-chip-icon {
+  flex: none;
+}
+
+.attach-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attach-chip-size {
+  flex: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.attach-chip-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  line-height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.attach-chip-remove:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+/* メッセージ内の画像・ファイル添付(送信プレビュー・履歴の両方で使用) */
+.message-attachments {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -593,6 +645,52 @@ html, body {
   border-radius: 6px;
   object-fit: cover;
   display: block;
+}
+
+.message-file-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 260px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  font-size: 13px;
+}
+
+.message-file-chip.clickable {
+  cursor: pointer;
+}
+
+.file-chip-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.file-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-chip-size {
+  flex: none;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.file-preview {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  background: var(--hover-bg);
+  border-radius: 4px;
+  padding: 6px;
 }
 
 .message-text:empty {

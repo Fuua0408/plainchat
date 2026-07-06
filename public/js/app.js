@@ -30,6 +30,8 @@ const sendBtn = document.getElementById('sendBtn');
 const chatError = document.getElementById('chatError');
 const attachBtn = document.getElementById('attachBtn');
 const attachInput = document.getElementById('attachInput');
+const attachFileBtn = document.getElementById('attachFileBtn');
+const attachFileInput = document.getElementById('attachFileInput');
 const attachPreviewList = document.getElementById('attachPreviewList');
 
 const hljsLightTheme = document.getElementById('hljsLightTheme');
@@ -49,10 +51,24 @@ let sending = false;
 let currentAbortController = null;
 let modalMode = null; // 'global' | 'conversation'
 
-// 1メッセージあたりの画像添付上限(フロントの定数。DECISIONS.md 2026-07-05参照)
+// 1メッセージあたりの画像+ファイル合算の添付上限(フロントの定数。DECISIONS.md 2026-07-05参照)
 const MAX_ATTACHMENTS = 4;
-let selectedAttachments = []; // [{ file: File, dataUrl: string }]
+let selectedAttachments = []; // [{ type: 'image', file, dataUrl } | { type: 'file', file }]
 let messageObjectUrls = []; // 履歴表示用に生成したobjectURL(再描画時にrevokeする)
+
+// 履歴のfile添付にはoriginal_nameが含まれない(013〜017のAPI仕様)ため、mimeから種別ラベルを補う
+const FILE_MIME_LABEL = {
+  'text/plain': 'テキストファイル (.txt)',
+  'text/markdown': 'Markdownファイル (.md)',
+  'text/csv': 'CSVファイル (.csv)',
+  'application/json': 'JSONファイル (.json)',
+};
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+}
 
 // ─────────────────────────────────────────────
 // ダークモード
@@ -354,17 +370,94 @@ function setBubbleContent(target, role, text) {
   }
 }
 
-function createMessageImagesEl(srcs) {
+// item: { type: 'image', src } | { type: 'file', name?, label?, size?, url? }
+// url があるファイルはクリックで本文プレビューを開閉できる(認証付きfetch、textContentで描画)
+function createFileChip(item) {
+  const chip = document.createElement('div');
+  chip.className = 'message-file-chip' + (item.url ? ' clickable' : '');
+
+  const header = document.createElement('div');
+  header.className = 'file-chip-header';
+
+  const icon = document.createElement('span');
+  icon.className = 'file-chip-icon';
+  icon.textContent = '📄';
+  header.appendChild(icon);
+
+  const nameEl = document.createElement('span');
+  nameEl.className = 'file-chip-name';
+  nameEl.textContent = item.name || item.label || 'ファイル';
+  header.appendChild(nameEl);
+
+  if (item.size) {
+    const sizeEl = document.createElement('span');
+    sizeEl.className = 'file-chip-size';
+    sizeEl.textContent = `(${item.size})`;
+    header.appendChild(sizeEl);
+  }
+
+  chip.appendChild(header);
+
+  if (item.url) {
+    chip.title = 'クリックで内容をプレビュー';
+    chip.addEventListener('click', async () => {
+      const existing = chip.querySelector('.file-preview');
+      if (existing) {
+        existing.remove();
+        return;
+      }
+      const pre = document.createElement('pre');
+      pre.className = 'file-preview';
+      pre.textContent = '読み込み中...';
+      chip.appendChild(pre);
+      try {
+        const text = await fetchFileText(item.url);
+        pre.textContent = text;
+      } catch (err) {
+        pre.textContent = `エラー: ${err.message}`;
+      }
+    });
+  }
+
+  return chip;
+}
+
+function createMessageAttachmentsEl(items) {
   const wrap = document.createElement('div');
-  wrap.className = 'message-images';
-  for (const src of srcs) {
-    const img = document.createElement('img');
-    img.src = src;
-    img.alt = '';
-    img.className = 'message-image';
-    wrap.appendChild(img);
+  wrap.className = 'message-attachments';
+  for (const item of items) {
+    if (item.type === 'image') {
+      const img = document.createElement('img');
+      img.src = item.src;
+      img.alt = '';
+      img.className = 'message-image';
+      wrap.appendChild(img);
+    } else {
+      wrap.appendChild(createFileChip(item));
+    }
   }
   return wrap;
+}
+
+// message.attachments(id, kind, mime, url)から表示用item配列を組み立てる。
+// 画像はBlob objectURLへ変換して即時表示、ファイルはmimeベースの種別ラベルのみ
+// (履歴APIはoriginal_nameを返さないため、ファイル名までは復元できない)
+async function buildAttachmentItems(attachments) {
+  const items = [];
+  for (const a of attachments || []) {
+    if (a.kind === 'image') {
+      try {
+        const src = await fetchImageObjectUrl(a.url);
+        messageObjectUrls.push(src);
+        items.push({ type: 'image', src });
+      } catch (err) {
+        console.warn('attachment fetch failed:', err.message);
+      }
+    } else if (a.kind === 'file') {
+      items.push({ type: 'file', label: FILE_MIME_LABEL[a.mime] || 'ファイル', url: a.url });
+    }
+  }
+  return items;
 }
 
 // これまでに生成した履歴表示用objectURLを解放する(会話切り替え・再描画時のリーク防止)
@@ -384,33 +477,21 @@ async function renderMessages(messages) {
     return;
   }
   for (const m of messages) {
-    let imageSrcs = [];
-    if (m.attachments && m.attachments.length > 0) {
-      const fetched = await Promise.all(
-        m.attachments.map((a) =>
-          fetchImageObjectUrl(a.url).catch((err) => {
-            console.warn('attachment fetch failed:', err.message);
-            return null;
-          })
-        )
-      );
-      imageSrcs = fetched.filter((src) => src !== null);
-      messageObjectUrls.push(...imageSrcs);
-    }
-    appendMessageBubble(m.role, m.content, imageSrcs);
+    const items = await buildAttachmentItems(m.attachments);
+    appendMessageBubble(m.role, m.content, items);
   }
   scrollToBottom();
 }
 
-// imageSrcs: <img src>にそのまま設定できるURL文字列(dataURL または objectURL)の配列
-function appendMessageBubble(role, text, imageSrcs) {
+// items: createMessageAttachmentsEl が受け付ける画像/ファイルの表示用item配列
+function appendMessageBubble(role, text, items) {
   const existingEmpty = messageList.querySelector('.empty-state');
   if (existingEmpty) existingEmpty.remove();
   const bubble = document.createElement('div');
   bubble.className = 'message message-' + role;
 
-  if (imageSrcs && imageSrcs.length > 0) {
-    bubble.appendChild(createMessageImagesEl(imageSrcs));
+  if (items && items.length > 0) {
+    bubble.appendChild(createMessageAttachmentsEl(items));
     const textEl = document.createElement('div');
     textEl.className = 'message-text';
     setBubbleContent(textEl, role, text || '');
@@ -466,26 +547,44 @@ function renderAttachPreviews() {
   attachPreviewList.innerHTML = '';
   attachPreviewList.hidden = selectedAttachments.length === 0;
   selectedAttachments.forEach((att, idx) => {
-    const thumb = document.createElement('div');
-    thumb.className = 'attach-thumb';
+    const item = document.createElement('div');
 
-    const img = document.createElement('img');
-    img.src = att.dataUrl;
-    img.alt = '';
-    thumb.appendChild(img);
+    if (att.type === 'image') {
+      item.className = 'attach-thumb';
+      const img = document.createElement('img');
+      img.src = att.dataUrl;
+      img.alt = '';
+      item.appendChild(img);
+    } else {
+      item.className = 'attach-chip';
+      const icon = document.createElement('span');
+      icon.className = 'attach-chip-icon';
+      icon.textContent = '📄';
+      item.appendChild(icon);
+
+      const nameEl = document.createElement('span');
+      nameEl.className = 'attach-chip-name';
+      nameEl.textContent = att.file.name;
+      item.appendChild(nameEl);
+
+      const sizeEl = document.createElement('span');
+      sizeEl.className = 'attach-chip-size';
+      sizeEl.textContent = formatFileSize(att.file.size);
+      item.appendChild(sizeEl);
+    }
 
     const removeBtn = document.createElement('button');
     removeBtn.type = 'button';
-    removeBtn.className = 'attach-thumb-remove';
+    removeBtn.className = att.type === 'image' ? 'attach-thumb-remove' : 'attach-chip-remove';
     removeBtn.setAttribute('aria-label', '削除');
     removeBtn.textContent = '×';
     removeBtn.addEventListener('click', () => {
       selectedAttachments.splice(idx, 1);
       renderAttachPreviews();
     });
-    thumb.appendChild(removeBtn);
+    item.appendChild(removeBtn);
 
-    attachPreviewList.appendChild(thumb);
+    attachPreviewList.appendChild(item);
   });
 }
 
@@ -494,31 +593,48 @@ function clearAttachments() {
   renderAttachPreviews();
 }
 
-async function handleAttachInputChange() {
-  const files = Array.from(attachInput.files || []);
-  attachInput.value = ''; // 同じファイルを続けて選択できるようにする
+// 画像・ファイル共通の追加処理。上限は画像+ファイルの合計(MAX_ATTACHMENTS)
+async function addAttachments(files, type) {
   if (files.length === 0) return;
 
   setChatError('');
   const remaining = MAX_ATTACHMENTS - selectedAttachments.length;
   if (remaining <= 0) {
-    setChatError(`画像は1メッセージにつき最大${MAX_ATTACHMENTS}枚までです`);
+    setChatError(`添付は画像+ファイル合計で1メッセージにつき最大${MAX_ATTACHMENTS}点までです`);
     return;
   }
   const accepted = files.slice(0, remaining);
   if (files.length > remaining) {
-    setChatError(`画像は1メッセージにつき最大${MAX_ATTACHMENTS}枚までです。超過分は無視しました`);
+    setChatError(`添付は画像+ファイル合計で1メッセージにつき最大${MAX_ATTACHMENTS}点までです。超過分は無視しました`);
   }
 
   for (const file of accepted) {
-    const dataUrl = await readFileAsDataUrl(file);
-    selectedAttachments.push({ file, dataUrl });
+    if (type === 'image') {
+      const dataUrl = await readFileAsDataUrl(file);
+      selectedAttachments.push({ type: 'image', file, dataUrl });
+    } else {
+      selectedAttachments.push({ type: 'file', file });
+    }
   }
   renderAttachPreviews();
 }
 
+async function handleImageInputChange() {
+  const files = Array.from(attachInput.files || []);
+  attachInput.value = ''; // 同じファイルを続けて選択できるようにする
+  await addAttachments(files, 'image');
+}
+
+async function handleFileInputChange() {
+  const files = Array.from(attachFileInput.files || []);
+  attachFileInput.value = ''; // 同じファイルを続けて選択できるようにする
+  await addAttachments(files, 'file');
+}
+
 attachBtn.addEventListener('click', () => attachInput.click());
-attachInput.addEventListener('change', handleAttachInputChange);
+attachInput.addEventListener('change', handleImageInputChange);
+attachFileBtn.addEventListener('click', () => attachFileInput.click());
+attachFileInput.addEventListener('change', handleFileInputChange);
 
 // ─────────────────────────────────────────────
 // 送受信
@@ -527,6 +643,7 @@ function setSending(isSending) {
   sending = isSending;
   chatInput.disabled = isSending;
   attachBtn.disabled = isSending;
+  attachFileBtn.disabled = isSending;
   sendBtn.textContent = isSending ? '停止' : '送信';
   sendBtn.classList.toggle('stop-btn', isSending);
 }
@@ -560,15 +677,22 @@ async function handleSend(e) {
 
   setSending(true);
 
-  // 添付ありの場合は先に全画像をアップロードする。1枚でも失敗したら送信を中断する(部分送信はしない)
+  // 添付ありの場合は先に全添付(画像・ファイル混在)をアップロードする。
+  // 1つでも失敗したら送信を中断する(部分送信はしない)
   let attachmentIds;
-  let imagePreviewSrcs = [];
+  let previewItems = [];
   if (hasAttachments) {
-    imagePreviewSrcs = selectedAttachments.map((a) => a.dataUrl);
+    previewItems = selectedAttachments.map((att) =>
+      att.type === 'image'
+        ? { type: 'image', src: att.dataUrl }
+        : { type: 'file', name: att.file.name, size: formatFileSize(att.file.size) }
+    );
     try {
       const ids = [];
       for (const att of selectedAttachments) {
-        const uploaded = await uploadImage(conversationId, att.file);
+        const uploaded = att.type === 'image'
+          ? await uploadImage(conversationId, att.file)
+          : await uploadFile(conversationId, att.file);
         ids.push(uploaded.id);
       }
       attachmentIds = ids;
@@ -579,7 +703,7 @@ async function handleSend(e) {
     }
   }
 
-  appendMessageBubble('user', text, imagePreviewSrcs);
+  appendMessageBubble('user', text, previewItems);
   chatInput.value = '';
   clearAttachments();
 

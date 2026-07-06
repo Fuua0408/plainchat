@@ -155,6 +155,29 @@ async function fetchImageObjectUrl(url) {
   return URL.createObjectURL(blob);
 }
 
+// テキストファイル1つをアップロードして { id, url, kind, original_name, size } を返す(1リクエスト1ファイル)
+async function uploadFile(conversationId, file) {
+  const formData = new FormData();
+  formData.append('conversation_id', String(conversationId));
+  formData.append('file', file);
+  const resp = await apiFetch('/api/uploads/file', { method: 'POST', body: formData });
+  let data = null;
+  try { data = await resp.json(); } catch { /* no body */ }
+  if (!resp.ok) {
+    throw new Error((data && data.error) || `アップロードに失敗しました (${resp.status})`);
+  }
+  return data;
+}
+
+// Bearer必須のファイル本文を認証付きfetchで取得し、テキストとして返す
+async function fetchFileText(url) {
+  const resp = await apiFetch(url);
+  if (!resp.ok) {
+    throw new Error(`ファイルの取得に失敗しました (${resp.status})`);
+  }
+  return resp.text();
+}
+
 // SSEチャット送信。event: delta/done/error を自前パースしてコールバックへ渡す
 // fetch + getReader()を使う理由: EventSourceはGET専用でPOSTボディを送れないため
 // signalで中断された場合は例外を投げず onAbort を呼ぶ(呼び出し側でエラー扱いしないため)
