@@ -5,7 +5,8 @@ require('dotenv').config();
 const path = require('path');
 const express = require('express');
 const logger = require('./logger');
-const { initDb } = require('./db');
+const { initDb, getDb } = require('./db');
+const tools = require('./tools');
 const { cleanupOrphanUploads } = require('./attachmentCleanup');
 const authRoutes = require('./routes/auth');
 const conversationsRoutes = require('./routes/conversations');
@@ -31,6 +32,7 @@ app.use('/api/uploads', uploadsRoutes);
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 initDb();
+tools.syncToolsToDb(getDb());
 
 try {
   cleanupOrphanUploads();
