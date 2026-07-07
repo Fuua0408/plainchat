@@ -7,6 +7,7 @@ const express = require('express');
 const logger = require('./logger');
 const { initDb, getDb } = require('./db');
 const tools = require('./tools');
+const { initMcp, closeMcp } = require('./mcp');
 const { cleanupOrphanUploads } = require('./attachmentCleanup');
 const authRoutes = require('./routes/auth');
 const conversationsRoutes = require('./routes/conversations');
@@ -31,15 +32,41 @@ app.use('/api/uploads', uploadsRoutes);
 
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
-initDb();
-tools.syncToolsToDb(getDb());
+// 起動順序: builtin読み込み(上のrequire('./tools')で自己登録済み)→ MCP接続+登録 →
+// tools台帳へのミラー同期。MCP接続は非同期(tools/list)なので起動処理全体をasync化する。
+// MCP接続に失敗してもミラー同期・サーバー起動は継続する
+async function main() {
+  initDb();
 
-try {
-  cleanupOrphanUploads();
-} catch (e) {
-  logger.error('attachment cleanup: unexpected failure at startup, continuing', { error: e.message });
+  await initMcp();
+  tools.syncToolsToDb(getDb());
+
+  try {
+    cleanupOrphanUploads();
+  } catch (e) {
+    logger.error('attachment cleanup: unexpected failure at startup, continuing', { error: e.message });
+  }
+
+  app.listen(PORT, () => {
+    logger.info(`plainchat server listening on port ${PORT}`);
+  });
 }
 
-app.listen(PORT, () => {
-  logger.info(`plainchat server listening on port ${PORT}`);
+// MCPクライアントをcloseし、mcp-searxng子プロセスを終了させてから終了する(孤児プロセス防止)
+async function shutdown(signal) {
+  logger.info(`plainchat: received ${signal}, shutting down`);
+  try {
+    await closeMcp();
+  } catch (e) {
+    logger.error('plainchat: error during mcp shutdown', { error: e.message });
+  }
+  process.exit(0);
+}
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+main().catch((e) => {
+  logger.error('plainchat: fatal startup error', { error: e.message });
+  process.exit(1);
 });
