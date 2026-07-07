@@ -7,6 +7,7 @@ const { authMiddleware } = require('../auth');
 const logger = require('../logger');
 const { expandPromptTemplate } = require('../promptTemplate');
 const { resolveAttachmentFilePath } = require('../attachmentStorage');
+const { getEnabledToolSchemas, getToolByName } = require('../tools');
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -119,6 +120,31 @@ function buildMessageContent(text, images, files) {
   return parts;
 }
 
+// TOOLS_ENABLED: 'false'のみ無効とみなし、未設定・不正値はtrue扱いにする
+function parseToolsEnabled() {
+  const raw = (process.env.TOOLS_ENABLED || '').trim().toLowerCase();
+  return raw !== 'false';
+}
+
+// TOOLS_MAX_ROUNDS: 未設定・不正値は4。0以下は1に丸める
+function parseMaxRounds() {
+  const n = parseInt(process.env.TOOLS_MAX_ROUNDS, 10);
+  if (!Number.isInteger(n)) return 4;
+  return Math.max(1, n);
+}
+
+function safeParseJsonArgs(text) {
+  try {
+    return { ok: true, value: JSON.parse(text && text.trim() !== '' ? text : '{}') };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+function formatToolResultContent(result) {
+  return typeof result === 'string' ? result : JSON.stringify(result);
+}
+
 // POST /api/conversations/:id/chat
 router.post('/:id/chat', async (req, res) => {
   const db = getDb();
@@ -191,6 +217,12 @@ router.post('/:id/chat', async (req, res) => {
     ? [{ role: 'system', content: expandPromptTemplate(systemPrompt) }, ...history]
     : history;
 
+  const toolsEnabled = parseToolsEnabled();
+  const maxRounds     = parseMaxRounds();
+  const toolSchemas   = toolsEnabled ? getEnabledToolSchemas(db) : [];
+  const useTools      = toolSchemas.length > 0;
+  const enabledToolNames = new Set(toolSchemas.map((t) => t.function.name));
+
   const url         = endpoint.replace(/\/chat\/completions$/, '') + '/chat/completions';
   const apiKey      = process.env.LLM_API_KEY || 'sk-fake';
   const maxTok      = parseInt(process.env.LLM_MAX_TOKENS || '2048');
@@ -233,20 +265,12 @@ router.post('/:id/chat', async (req, res) => {
 
   let fullText = '';
   let firstTokenReceived = false;
+  let roundsUsed = 0;
 
   try {
-    const upstreamRes = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + apiKey,
-        // ストリーム中断時にAbortControllerで切断すると、undiciのkeep-aliveプールに
-        // 壊れたソケットが残り以降の全リクエストが terminated エラーになるため、
-        // 各リクエストでコネクションを使い捨てる
-        'Connection': 'close',
-      },
-      signal: controller.signal,
-      body: JSON.stringify({
+    for (;;) {
+      const forceNoTools = useTools && roundsUsed >= maxRounds;
+      const requestBody = {
         messages,
         stream: true,
         max_tokens: maxTok,
@@ -254,39 +278,125 @@ router.post('/:id/chat', async (req, res) => {
         top_p: topP,
         top_k: topK,
         repetition_penalty: repPen,
-      }),
-    });
-
-    if (!upstreamRes.ok) {
-      const txt = await upstreamRes.text().catch(() => '');
-      throw new Error(`LLMエラー (${upstreamRes.status}): ${txt.slice(0, 200)}`);
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let done = false;
-
-    for await (const chunk of upstreamRes.body) {
-      buffer += decoder.decode(chunk, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop();
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith('data:')) continue;
-        const payload = trimmed.slice(5).trim();
-        if (payload === '[DONE]') { done = true; break; }
-
-        let json;
-        try { json = JSON.parse(payload); } catch { continue; }
-        const delta = json.choices?.[0]?.delta?.content || '';
-        if (delta) {
-          fullText += delta;
-          firstTokenReceived = true;
-          safeWrite(() => sendEvent(res, 'delta', { text: delta }));
-        }
+      };
+      if (useTools) {
+        requestBody.tools = toolSchemas;
+        if (forceNoTools) requestBody.tool_choice = 'none';
       }
-      if (done) break;
+
+      const upstreamRes = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + apiKey,
+          // ストリーム中断時にAbortControllerで切断すると、undiciのkeep-aliveプールに
+          // 壊れたソケットが残り以降の全リクエストが terminated エラーになるため、
+          // 各リクエストでコネクションを使い捨てる
+          'Connection': 'close',
+        },
+        signal: controller.signal,
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!upstreamRes.ok) {
+        const txt = await upstreamRes.text().catch(() => '');
+        throw new Error(`LLMエラー (${upstreamRes.status}): ${txt.slice(0, 200)}`);
+      }
+
+      fullText = '';
+      firstTokenReceived = false;
+      let finishReason = null;
+      const toolCallsByIndex = new Map();
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let done = false;
+
+      for await (const chunk of upstreamRes.body) {
+        buffer += decoder.decode(chunk, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data:')) continue;
+          const payload = trimmed.slice(5).trim();
+          if (payload === '[DONE]') { done = true; break; }
+
+          let json;
+          try { json = JSON.parse(payload); } catch { continue; }
+          const choice = json.choices?.[0];
+          if (!choice) continue;
+          const delta = choice.delta || {};
+
+          if (delta.content) {
+            fullText += delta.content;
+            firstTokenReceived = true;
+            safeWrite(() => sendEvent(res, 'delta', { text: delta.content }));
+          }
+
+          if (Array.isArray(delta.tool_calls)) {
+            for (const tc of delta.tool_calls) {
+              const idx = typeof tc.index === 'number' ? tc.index : 0;
+              if (!toolCallsByIndex.has(idx)) {
+                toolCallsByIndex.set(idx, { id: '', type: 'function', function: { name: '', arguments: '' } });
+              }
+              const entry = toolCallsByIndex.get(idx);
+              if (tc.id) entry.id = tc.id;
+              if (tc.type) entry.type = tc.type;
+              if (tc.function?.name) entry.function.name += tc.function.name;
+              if (tc.function?.arguments) entry.function.arguments += tc.function.arguments;
+            }
+          }
+
+          if (choice.finish_reason) finishReason = choice.finish_reason;
+        }
+        if (done) break;
+      }
+
+      const isToolRound = finishReason === 'tool_calls' && !forceNoTools;
+      const toolCalls = Array.from(toolCallsByIndex.entries())
+        .sort((a, b) => a[0] - b[0])
+        .map(([, v]) => v);
+
+      if (!isToolRound || toolCalls.length === 0) {
+        // 通常のstop、または上限到達によるtool_choice:'none'強制後の最終回答
+        break;
+      }
+
+      // 中間ツールラウンド: このラウンドのcontentは最終回答として扱わずストリームしない
+      messages.push({ role: 'assistant', content: fullText || null, tool_calls: toolCalls });
+
+      for (const toolCall of toolCalls) {
+        const toolName = toolCall.function.name;
+        safeWrite(() => sendEvent(res, 'tool_call', { name: toolName }));
+
+        let status = 'success';
+        let resultContent;
+
+        const parsedArgs = safeParseJsonArgs(toolCall.function.arguments);
+        const tool = getToolByName(toolName);
+        if (!parsedArgs.ok) {
+          status = 'error';
+          resultContent = JSON.stringify({ error: `引数のJSON解析に失敗しました: ${parsedArgs.error}` });
+        } else if (!enabledToolNames.has(toolName) || !tool) {
+          status = 'error';
+          resultContent = JSON.stringify({ error: `未登録または無効なツールです: ${toolName}` });
+        } else {
+          try {
+            const result = await tool.handler(parsedArgs.value);
+            resultContent = formatToolResultContent(result);
+          } catch (e) {
+            status = 'error';
+            resultContent = JSON.stringify({ error: e.message || String(e) });
+          }
+        }
+
+        messages.push({ role: 'tool', tool_call_id: toolCall.id, content: resultContent });
+        safeWrite(() => sendEvent(res, 'tool_result', { name: toolName, status }));
+      }
+
+      roundsUsed += 1;
     }
 
     clearTimeout(timeoutId);
