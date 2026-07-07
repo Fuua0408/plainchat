@@ -398,3 +398,30 @@
   当面は秘密を .env に残す最小ソース(env 参照方式)で読む
 - **確定(027の境界形)**: loadMcpServers() の返り値は正規化配列 [{ label, enabled, command, args, env }]。
   env は「解決済み実値」。028 は loadMcpServers() の内部のみを DB+復号へ差し替え、同じ返り値形を維持する
+
+## 2026-07-07: MCP関連の後続タスク採番と transport 拡張の布石
+- **決定(採番)**: 028 = mcp_servers の DB 保管+封筒暗号(AES-256-GCM, 鍵は .env の SECRET_ENC_KEY、
+  UIなし土台)、029 = 設定画面(管理者ゲート・command/args カタログ方式=制約2への対処)、
+  030 = builtin 撤去(get_server_time・builtin ローダ・origin の 'builtin' 値)。030 は独立でいつでも差せる
+- **予見(031)**: 子プロセスを持たない外部プロセスの MCP サーバーへ接続するケース
+  (例: NookResonance が MCP サーバー機能を持ち、子プロセスは NookResonance 側が管理)。
+  これは Streamable HTTP トランスポート対応に相当する。stdio(PlainChat が起動・終了を管理)と
+  HTTP(接続のみ、寿命は相手管轄)はライフサイクルが異なる
+- **布石(028で織り込む)**: loadMcpServers() の正規化構成と mcp_servers スキーマに transport 種別を持たせる。
+  transport='stdio'(command/args/env)/ 'http'(url/headers)の両系統の欄を最初から用意。
+  実装は当面 stdio のみ。031 は connectServer() の分岐に HTTP を一枝足すだけで載る(スキーマ再設計を回避)
+  - http の headers にトークンが乗り得るため、headers 内シークレットも封筒暗号の対象とする
+
+## 2026-07-07: 028 スキーマと封筒暗号の確定
+- **決定(スキーマ mcp_servers)**: label/enabled/transport/command/args/url/catalog_id/sort_order は平文。
+  秘密は env と headers を「別カラムの独立暗号文」で持つ: env_enc/env_iv/env_tag、headers_enc/headers_iv/headers_tag。
+  片方のみ保持(NULL可)を許容。command/args/url は平文(秘密ではなく起動方法。command/args は029のカタログ方式で書込を縛る)
+- **決定(封筒暗号)**: AES-256-GCM(Node標準 crypto、追加依存なし)。鍵は .env の SECRET_ENC_KEY(base64の32バイト)のみ、
+  DBに鍵を置かない。IVは毎回ランダム、authTag保存。復号は使用直前のみ、復号値はログ/レスポンス/エラーに出さない
+- **決定(退避)**: SECRET_ENC_KEY 未設定/不正時、暗号項目を持つサーバーはスキップしPlainChat起動は継続。
+  暗号項目を持たないサーバーは鍵無しでも起動可
+- **決定(loadMcpServers)**: 内部のみ DB読込+復号へ差し替え、返り値形 {label,enabled,transport,command,args,env(,url,headers)} は027から不変
+- **決定(自動seed)**: 028a は初回起動時に mcp_servers が空かつ DEBUG_searxng 設定済みなら searxng を暗号化seed(後方互換)。
+  この後方互換seedと DEBUG_searxng 依存、builtin 一式は 030 で撤去し「DBが唯一の源」の形へ寄せる
+- **タスク**: 028a=テーブル+secretBox+loadMcpServers差替+鍵未設定退避+自動seed(UIなし土台)/
+  029=設定画面(管理者ゲート・カタログ方式)/ 030=builtin撤去+後方互換seed/DEBUG_searxng撤去
