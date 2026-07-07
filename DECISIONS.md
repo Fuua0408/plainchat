@@ -301,3 +301,32 @@
   Phase 3の外に置く。必要時に個別タスク化
 - **次**: WEB検索を別スレッドで新規に設計相談する。DECISIONS「WebSearch機能をPhase 3以降の候補」
   および Phase 4「外部ツール呼び出し」との線引きから始める(本スレッドではスコープ外)
+
+## 2026-07-07: Phase 4 の方向づけ(WEB検索 / RAG / ツール呼び出し)
+- **決定**: ツール呼び出しを土台に置く A方向 を採る(Spike 0 で native tool_calls の動作を
+  確認済み、2026-07-07「Spike 0 結果」参照)。WEB検索・RAG はその上に載せる
+- **決定**: MCP は今回作り込まない。ツール呼び出しループは「定義・呼び出し・結果返却を
+  JSON で疎結合」に保ち MCP と親和的な形にしておくが、アプリ内の小さなツールレジストリで実装する
+  (フル MCP クライアントは MVP に対し過剰。将来の追加レバーとして温存)
+- **決定**: ネイティブ tool_calls が不安定/不可なら、プロンプト擬似ツール方式へフォールバック。
+  手動トグルの WEB検索は層1(モデルの判断)を必要としないため、最初の価値として先行可能
+- **決定**: RAG の対象は新規のドキュメントライブラリ(Phase 3 の attachments とは別系統。
+  永続・大規模・会話横断)。embedding モデル・ベクタストア・チャンク分割・検索が必要な
+  Phase 4 最重量タスクとして最後に着手する
+- **順序(案)**: Spike 0(tool_calls 検証)→ WEB検索 → ツール呼び出し汎用化 → RAG
+- **理由**: 三者はツール呼び出しを substrate とする階層関係。土台の成否が全体を規定するため
+  検証を先行させ、価値の出やすい WEB検索から積む。RAG は道具立てが重く決定事項も多い
+
+## 2026-07-07: Spike 0 結果 — ツール呼び出しは native 方式で確定(A本採用)
+- **事実**: textgen-webui 経由 llama.cpp(Gemma4量子化)で OpenAI 形式の tools/tool_calls が
+  そのまま機能することを実地確認。A方向を本採用、擬似ツールへのフォールバックは不要
+- **観測(chat.js 実装に効く要点)**:
+  - tool_calls は choices[0].message.tool_calls に標準形式。finish_reason が "tool_calls"
+    (通常応答は "stop")で分岐判定できる
+  - stream:true でも tool_calls は1チャンクで完結(delta.tool_calls[0], index付き、
+    function.name/arguments が揃う)。SSE中継の multi-round 化は小改修で済む見込み
+  - reasoning_content は content と別枠で乗り、tool_calls 判定を汚染しない
+  - 2ターン目は標準形式(assistant+tool_calls → tool+tool_call_id)がそのまま通る。
+    tool_choice による強制も動作
+- **既知の未確認(防御的に実装)**: 本検証は単発。複数ツール併用・長い引数での delta 断片化は
+  未確認。chat.js では index ごとの引数バッファ結合を「断片が来ても壊れない」形で書く
