@@ -358,3 +358,21 @@
     prompts/resources 対応は将来レバーとして温存(今は作らない)
   - 注記: 別プロジェクト側の実装・キャラクター概念は PlainChatリポジトリには持ち込まない
     (スコープ規律を維持。PlainChat 自身のコードを正とする)
+
+## 2026-07-07: MCPクライアントは公式SDKで実装・段階導入・builtin廃止(026/027)
+- **決定(A: SDK)**: MCP クライアントは公式 @modelcontextprotocol/sdk(v1.x 安定版)で実装。
+  ライセンス MIT で PlainChat(MIT)と非抵触。stdio フレーミング・initialize・tools/list・tools/call は
+  SDK に委譲し、自作対象は登録アダプタ・名前空間化・ディスパッチに集中する
+  - 前提: SDK は zod を peer dependency に要求(最小構成に zod が加わる)
+  - v2 は 2026-07-28 仕様対応の beta(server/client 分割)。当面 v1.x、v2 移行は将来検討
+  - PlainChat の CommonJS/ESM と SDK の読み込み整合は 026 で実地確認(推測しない)
+- **決定(B: 段階導入)**: 026 で env 簡易配線の第一増分(単一 mcp-searxng を stdio 起動)を作り、
+  実 SearXNG 検索が 025 ループを一周することを実証。027 で mcpServers 風 JSON 設定へ一般化
+  (複数サーバー対応=NookResonance 流用の土台)。実値は .env 隔離、設定ファイルはプレースホルダ参照。
+  026 は使い捨てではなくリポジトリ内の第一増分(そのまま育つコード)とする
+- **決定(C: builtin廃止)**: builtin を恒久カテゴリとして廃止。最終形の登録源は MCP のみ。
+  検証用 get_server_time は 026 の実証まで暫定存置し、027 で builtin 一式(serverTime.js・
+  builtin ローダ・origin の 'builtin' 値)を撤去。origin 列は存続し 'mcp:<server>' を保持
+- **決定(名前空間化)**: LLM へ渡すツール名は MCP サーバー単位で prefix(例 searxng__web_search)。
+  台帳 name は一意のまま、ディスパッチは (server, 元ツール名) へ逆引きして tools/call。
+  026 から一律適用し、027 の複数サーバーでも命名/ディスパッチ契約を不変に保つ

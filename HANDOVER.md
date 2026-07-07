@@ -17,9 +17,10 @@
   Phase 4 = 024 ツール呼び出し基盤(登録型ツール定義・DB tools 台帳・origin・起動時ミラー同期・
   検証用 builtin get_server_time。chat.js 無改修)
 - **Phase 4 タスク採番/計画**:
-  - 024 ツール基盤 … 完了
-  - 025 ツール呼び出しループ … 次。chat.js を multi-round 化。builtin ダミーで完結検証(MCP非依存)。
-    制御は env TOOLS_ENABLED / TOOLS_MAX_ROUNDS。ツール往復はターン内一時利用(DB保存しない)
+  - 024 ツール呼び出し基盤(登録型ツール定義・DB tools 台帳・origin・起動時ミラー同期・
+  検証用 builtin get_server_time。chat.js 無改修)、025 ツール呼び出しループ(chat.js を multi-round 化。
+  tool_call/tool_result SSEイベント・上限時 tool_choice:'none'・失敗はループ継続・ツール往復は非保存)
+  - 025 ツール呼び出しループ … 完了(chat.js multi-round 化)
   - 026 MCPクライアント+登録アダプタ … stdio 接続 → tools/list → 転送handler+origin='mcp:*' で登録
     → tools/call ディスパッチ。ツール名の名前空間化もここで。将来 prompts/resources の余地を塞がない
   - 検索サーバー … 自作せず既製 mcp-searxng を自分の SearXNG に向けて動かすインフラ手順
@@ -42,6 +43,10 @@
   MCP サーバー化構想)を見込んだ投資。NookResonance 側の概念は PlainChat には持ち込まない
 - **運用メモ**: グローバル設定にClaude系プロンプト改変版(約11,600字)。budget値(現6000)は
   レイテンシ/推論深度を見て調整可
+- **既知の挙動(025で観測)**: TOOLS_ENABLED を false に切り替えても、同一会話の履歴にツール利用の
+  文脈(過去にツール実行へ言及したアシスタント応答など)が残っていると、モデルが引きずられて
+  空応答(reasoning budget 超過)になることがある。コードのバグではなくコンテキスト起因で、
+  新規会話ではフォールバックは正常。運用上、ツール可否の切り替えは新規会話で行うのが無難
 
 ## リポジトリ構成
 - src/index.js            : Expressエントリポイント(ポート 18091)。起動時にツール台帳ミラー同期
@@ -57,7 +62,9 @@
 - src/tools/builtin/serverTime.js : 検証用 builtin get_server_time(origin='builtin', env前提なし)
 - src/routes/auth.js      : ログイン/パスワード変更/me
 - src/routes/conversations.js : 会話CRUD+メッセージ一覧
-- src/routes/chat.js      : SSEチャット(ユーザー発話保存→LLM中継→応答保存)
+- src/routes/chat.js      : SSEチャット+ツール呼び出しループ(multi-round)。tools有効時は
+                            tool_call/tool_result イベント発火・ツール実行、上限時 tool_choice:'none'。
+                            ツール往復は非保存で最終応答のみ保存(025)
 - src/routes/uploads.js   : 画像・ファイルのアップロード/配信API
 - public/                 : フロントエンド(素のHTML/CSS/JS、CDNでmarked/DOMPurify/highlight.js)
 - data/                   : SQLite DB等(gitignore対象)
