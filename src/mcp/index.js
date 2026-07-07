@@ -1,18 +1,27 @@
 'use strict';
 
-const { connectSearxng } = require('./client');
+const { loadMcpServers } = require('./config');
+const { connectServer } = require('./client');
 const { registerServerTools } = require('./register');
 const logger = require('../logger');
 
 let activeServers = [];
 
-// MCPサーバーへ接続しツールをregistryへ登録する。026時点では単一サーバー(searxng)のみ。
-// 接続失敗時もここで例外を飲み込み、呼び出し元(起動シーケンス)は必ず継続できるようにする
+// loadMcpServers()が返す正規化配列を元に、enabledな各サーバーへ接続しツールをregistryへ登録する。
+// 1サーバーの接続/登録失敗は隔離し(ログを残すのみ)、他サーバーとサーバー起動シーケンス全体は継続する
 async function initMcp() {
+  const configs = loadMcpServers();
   const servers = [];
 
-  const searxng = await connectSearxng();
-  if (searxng) servers.push(searxng);
+  for (const config of configs) {
+    if (!config.enabled) {
+      logger.info(`mcp: "${config.label}" is disabled, skipping`);
+      continue;
+    }
+
+    const server = await connectServer(config);
+    if (server) servers.push(server);
+  }
 
   for (const server of servers) {
     await registerServerTools(server);
