@@ -9,38 +9,52 @@
 - GitHub Public(MIT License)。機密・実環境情報(IP/ホスト名等)はコミット禁止
 
 ## 現在地
-- **フェーズ**: Phase 3 完了(①画像→Vision / ②テキストファイル添付 / 磨き込み / 後片付け)。
-  次は WEB検索を別スレッドで設計相談
-- **完了**: Phase 1(001〜007)、Phase 2(008〜012)、
-  Phase 3 = 013 アップロード基盤 / 014 マルチモーダル化 / 015 フロント画像添付(複数) /
-  空応答対応(reasoning budget) / 016 ファイル添付基盤 / 017 ファイル注入 /
-  018 フロントファイル添付(合算4混在) / 019 attachmentメタ追加 / 020 履歴チップ実名 /
-  021 D&D / 022 チップ視認性 / 023 削除時クリーンアップ+孤児回収
-- **インフラ**: n_ctx=81920 / LLM_MAX_TOKENS=32768。MTP有効前提。Vision素通し(単一・複数)確認済み。
+- **フェーズ**: Phase 4 着手中(WEB検索 / RAG / ツール呼び出し)。Phase 3 まで完了済み。
+  ツール呼び出しは native ではなく MCP 経由で実装する方針(DECISIONS参照)
+- **完了**: Phase 1(001〜007)、Phase 2(008〜012)、Phase 3(013〜023)、
+  Spike 0(ツール呼び出し検証: textgen-webui経由 llama.cpp で OpenAI 形式 tools/tool_calls が
+  native 動作することを実地確認。リポジトリ外の使い捨てで実施)、
+  Phase 4 = 024 ツール呼び出し基盤(登録型ツール定義・DB tools 台帳・origin・起動時ミラー同期・
+  検証用 builtin get_server_time。chat.js 無改修)
+- **Phase 4 タスク採番/計画**:
+  - 024 ツール基盤 … 完了
+  - 025 ツール呼び出しループ … 次。chat.js を multi-round 化。builtin ダミーで完結検証(MCP非依存)。
+    制御は env TOOLS_ENABLED / TOOLS_MAX_ROUNDS。ツール往復はターン内一時利用(DB保存しない)
+  - 026 MCPクライアント+登録アダプタ … stdio 接続 → tools/list → 転送handler+origin='mcp:*' で登録
+    → tools/call ディスパッチ。ツール名の名前空間化もここで。将来 prompts/resources の余地を塞がない
+  - 検索サーバー … 自作せず既製 mcp-searxng を自分の SearXNG に向けて動かすインフラ手順
+    (PlainChat のコーディングタスクではない)。初手トランスポートは stdio
+  - RAG … 別途設計(embeddings/ベクタストア)。同じ台帳・ループ・LLM契約の上に載る
+- **インフラ**: n_ctx=81920 / LLM_MAX_TOKENS=32768。MTP有効前提。Vision素通し確認済み。
   textgen-webuiがllama.cppを内部起動、extra-flags に
   `--reasoning-budget 6000 --reasoning-budget-message "..."`(空応答解消)
 - **既知の外部課題(回避済み)**: llama.cpp の fattn.cu CUDA fatal error(Gemma4+fattn、
   Issue #24440/#24324系)。2GPUの tensor-split で再発するため `--split-mode layer` で回避運用中
-- **次タスク**: WEB検索の設計相談(別スレッドで新規開始)。主要論点は下記
-- **WEB検索の論点メモ(次スレッド用)**:
-  - 位置づけ: 「Phase 3以降の候補」登録済み。Phase 4「外部ツール呼び出し」と重複するため線引きが要る
-  - 検索プロバイダの選定(API・コスト・プライバシー。自宅運用として何を使うか)
-  - 呼び出しトリガ: 手動トグル か モデルのツール呼び出し/自動判定 か
-  - 結果の注入方法と引用表示、コンテキスト消費(81920とreasoning budgetとの兼ね合い)
-  - 既存のグローバルSystem Prompt内に温存済みの「web search誘導」記述との接続
-- **Phase 3スコープメモ**: ①=画像+Vision-QA(合算4)。②=テキストファイル(txt/md/csv/json)の
-  添付・要約・QA。③は②の注入方式に吸収。PDF/OCR/docx/pptxは見送り(後続レバー)。
-  ロールプレイ機能は持ち込まない
-- **運用メモ**: グローバル設定にClaude系プロンプト改変版(約11,600字)。長文でも空応答はbudgetで
-  解消済み。budget値(現6000)はレイテンシ/推論深度を見て調整可
+- **SearXNG 準備メモ(026の前提)**: API用途には settings.yml の search.formats に json を足す
+  (無効だと 403)。limiter/public_instance はオフのまま(server-to-server 想定)。接続先URLは .env に
+  隔離(例: SEARX_ENDPOINT のプレースホルダ)。mcp-searxng は SEARXNG_URL で自分のインスタンスを指す
+- **WEB検索の論点(解決済み・DECISIONS参照)**:
+  - プロバイダ=SearXNG(セルフホスト)。方式=native ではなく MCP 経由(既製 mcp-searxng を consume)
+  - トランスポート初手=stdio(旧SSEは非推奨のため不採用)
+  - トリガ/注入/コンテキスト予算・「web search誘導」記述との接続は 025/026 で具体化
+- **設計の動機メモ(プロジェクト内認識)**: 登録型ツール基盤・origin・MCPクライアントは、別プロジェクト
+  NookResonance への流用(ツール呼び出しの共通土台化、キャラクター性格を prompts として供給する
+  MCP サーバー化構想)を見込んだ投資。NookResonance 側の概念は PlainChat には持ち込まない
+- **運用メモ**: グローバル設定にClaude系プロンプト改変版(約11,600字)。budget値(現6000)は
+  レイテンシ/推論深度を見て調整可
 
 ## リポジトリ構成
-- src/index.js            : Expressエントリポイント(ポート 18091)
+- src/index.js            : Expressエントリポイント(ポート 18091)。起動時にツール台帳ミラー同期
 - src/logger.js           : 簡易ロガー
-- src/db.js               : SQLite接続・スキーマ初期化・初期ユーザーシード
+- src/db.js               : SQLite接続・スキーマ初期化・初期ユーザーシード(tools台帳を冪等作成)
 - src/auth.js             : JWT認可ミドルウェア
 - src/attachmentStorage.js    : data/の絶対パス化とattachment→ファイルパス解決(013〜017共有)
 - src/attachmentCleanup.js     : 起動時の孤児アップロード回収(023)
+- src/tools/types.js      : ツール定義のJSDoc型(name/description/parameters/handler/origin)
+- src/tools/registry.js   : レジストリ(register/getRegisteredTools/getToolByName/
+                            buildOpenAIToolSchemas/getEnabledToolSchemas/syncToolsToDb)
+- src/tools/index.js      : builtinを読み込み自己登録させ registry を再エクスポート(同期の前提)
+- src/tools/builtin/serverTime.js : 検証用 builtin get_server_time(origin='builtin', env前提なし)
 - src/routes/auth.js      : ログイン/パスワード変更/me
 - src/routes/conversations.js : 会話CRUD+メッセージ一覧
 - src/routes/chat.js      : SSEチャット(ユーザー発話保存→LLM中継→応答保存)
