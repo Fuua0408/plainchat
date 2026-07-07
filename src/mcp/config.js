@@ -1,68 +1,74 @@
 'use strict';
 
+const { getDb } = require('../db');
+const { decryptSecret } = require('./secretBox');
 const logger = require('../logger');
 
-// mcp-searxngのインストール済みエントリ(dist/cli.js、shebang付きの素のNode ESMスクリプト)を直接
-// nodeで起動する。npx経由だとWindowsで.cmdラッパーを踏むため、実行ファイルパスを直接解決して
-// process.execPathで起動することでシェル/.cmd問題を回避する
-function resolveSearxngEntry() {
+function parseArgs(argsJson) {
+  if (!argsJson) return [];
   try {
-    return require.resolve('mcp-searxng/dist/cli.js');
+    const parsed = JSON.parse(argsJson);
+    return Array.isArray(parsed) ? parsed : [];
   } catch (e) {
-    logger.error('mcp: failed to resolve mcp-searxng entry point', { error: e.message });
-    return null;
+    logger.error('mcp: failed to parse args JSON, treating as empty', { error: e.message });
+    return [];
   }
 }
 
-// PlainChat側の変数名(DEBUG_searxng)をmcp-searxngが期待する変数名(SEARXNG_URL)へマッピングする。
-// 末尾スラッシュは正規化して落とす
-function resolveSearxngUrl() {
-  const raw = process.env.DEBUG_searxng;
-  if (!raw || raw.trim() === '') return null;
-  return raw.trim().replace(/\/+$/, '');
+function decryptColumns(row, prefix) {
+  return decryptSecret({
+    enc: row[`${prefix}_enc`],
+    iv: row[`${prefix}_iv`],
+    tag: row[`${prefix}_tag`],
+  });
 }
 
-// MCP_SEARXNG_ENABLED: 'false'のみ無効とみなし、未設定・不正値はtrue扱いにする(TOOLS_ENABLEDと同じ方針)
-function parseSearxngEnabled() {
-  const raw = (process.env.MCP_SEARXNG_ENABLED || '').trim().toLowerCase();
-  return raw !== 'false';
-}
-
-const DISABLED_SERVER_DEFAULTS = { command: process.execPath, args: [], env: {} };
-
-// searxng 1エントリを.envから構築する。command/argsは026同様「node + mcp-searxng cli絶対パス」、
-// envは子プロセスへ渡す解決済み実値(SEARXNG_URL)。無効化条件(フラグfalse/URL未設定/エントリ解決不可)は
-// enabled=falseとして返し、呼び出し側はcommand/argsを一切気にせずenabledだけを見ればよい
-function buildSearxngServerConfig() {
-  if (!parseSearxngEnabled()) {
-    return { label: 'searxng', enabled: false, ...DISABLED_SERVER_DEFAULTS };
-  }
-
-  const url = resolveSearxngUrl();
-  if (!url) {
-    logger.warn('mcp: DEBUG_searxng is not set, disabling searxng MCP server');
-    return { label: 'searxng', enabled: false, ...DISABLED_SERVER_DEFAULTS };
-  }
-
-  const entry = resolveSearxngEntry();
-  if (!entry) {
-    return { label: 'searxng', enabled: false, ...DISABLED_SERVER_DEFAULTS };
-  }
-
-  return {
-    label: 'searxng',
-    enabled: true,
-    command: process.execPath,
-    args: [entry],
-    env: { SEARXNG_URL: url },
-  };
-}
-
-// MCPサーバー設定の唯一の出所。正規化済み配列 [{label,enabled,command,args,env}] を返す。
-// 027時点の実装ソースは.env(searxng 1エントリ)。028でDB+封筒復号に差し替える際も、
-// この関数の内部だけを変更すれば呼び出し側(src/mcp/client.js, index.js)は無改修で動く
+// MCPサーバー設定の唯一の出所。mcp_servers(DB)のenabled=1行をsort_order,id順に読み、
+// env/headersを封筒復号して正規化配列 [{label,enabled,transport,command,args,env(,url,headers)}] を返す。
+// 028a時点の呼び出し側(initMcp()/register.js/client.js)は027から無改修のまま動く(この関数の内部のみ差替)
 function loadMcpServers() {
-  return [buildSearxngServerConfig()];
+  const db = getDb();
+  const rows = db
+    .prepare('SELECT * FROM mcp_servers WHERE enabled = 1 ORDER BY sort_order ASC, id ASC')
+    .all();
+
+  const servers = [];
+
+  for (const row of rows) {
+    let env;
+    let headers;
+    try {
+      env = decryptColumns(row, 'env') || {};
+      headers = decryptColumns(row, 'headers') || {};
+    } catch (e) {
+      if (e.code === 'ERR_KEY_MISSING') {
+        logger.error(
+          `mcp: SECRET_ENC_KEY is not set or invalid, skipping "${row.label}" (set SECRET_ENC_KEY in .env to enable it)`
+        );
+      } else {
+        logger.error(`mcp: failed to decrypt secrets for "${row.label}", skipping`, { error: e.message });
+      }
+      continue;
+    }
+
+    const server = {
+      label: row.label,
+      enabled: !!row.enabled,
+      transport: row.transport,
+      command: row.command,
+      args: parseArgs(row.args),
+      env,
+    };
+
+    if (row.transport === 'http') {
+      server.url = row.url;
+      server.headers = headers;
+    }
+
+    servers.push(server);
+  }
+
+  return servers;
 }
 
 module.exports = { loadMcpServers };

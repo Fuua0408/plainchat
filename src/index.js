@@ -8,6 +8,7 @@ const logger = require('./logger');
 const { initDb, getDb } = require('./db');
 const tools = require('./tools');
 const { initMcp, closeMcp } = require('./mcp');
+const { seedBackwardCompatServers } = require('./mcp/seed');
 const { cleanupOrphanUploads } = require('./attachmentCleanup');
 const authRoutes = require('./routes/auth');
 const conversationsRoutes = require('./routes/conversations');
@@ -37,6 +38,7 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 // MCP接続に失敗してもミラー同期・サーバー起動は継続する
 async function main() {
   initDb();
+  seedBackwardCompatServers();
 
   await initMcp();
   tools.syncToolsToDb(getDb());

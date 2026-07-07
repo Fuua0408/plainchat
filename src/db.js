@@ -82,6 +82,28 @@ function migrate(db) {
       created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
       updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
     );
+
+    -- 028a: MCPサーバー設定のDB保管。label/enabled/transport/command/args/url/catalog_id/sort_order は平文、
+    -- env/headers はそれぞれ独立の封筒暗号(enc/iv/tag)で保持する(片方のみ保持=NULL可)
+    CREATE TABLE IF NOT EXISTS mcp_servers (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      label        TEXT    NOT NULL UNIQUE,
+      enabled      INTEGER NOT NULL DEFAULT 1,
+      transport    TEXT    NOT NULL DEFAULT 'stdio',
+      command      TEXT,
+      args         TEXT,
+      url          TEXT,
+      env_enc      TEXT,
+      env_iv       TEXT,
+      env_tag      TEXT,
+      headers_enc  TEXT,
+      headers_iv   TEXT,
+      headers_tag  TEXT,
+      catalog_id   TEXT,
+      sort_order   INTEGER NOT NULL DEFAULT 0,
+      created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+      updated_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   // 既存DBには上記CREATE TABLEが効かないため、起動のたびに列の有無を確認して追加する(冪等)
