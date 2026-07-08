@@ -8,7 +8,6 @@ const logger = require('./logger');
 const { initDb, getDb } = require('./db');
 const tools = require('./tools');
 const { initMcp, closeMcp } = require('./mcp');
-const { seedBackwardCompatServers } = require('./mcp/seed');
 const { cleanupOrphanUploads } = require('./attachmentCleanup');
 const authRoutes = require('./routes/auth');
 const conversationsRoutes = require('./routes/conversations');
@@ -35,15 +34,15 @@ app.use('/api/mcp', mcpAdminRoutes);
 
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
-// 起動順序: builtin読み込み(上のrequire('./tools')で自己登録済み)→ MCP接続+登録 →
-// tools台帳へのミラー同期。MCP接続は非同期(tools/list)なので起動処理全体をasync化する。
+// 起動順序: MCP接続+登録(initMcp、registryはbuiltinが無いため空から始まる)→
+// その接続成功サーバー集合を使ってtools台帳へミラー同期(孤児tools無効化はここで判定)。
+// MCP接続は非同期(tools/list)なので起動処理全体をasync化する。
 // MCP接続に失敗してもミラー同期・サーバー起動は継続する
 async function main() {
   initDb();
-  seedBackwardCompatServers();
 
-  await initMcp();
-  tools.syncToolsToDb(getDb());
+  const { connected } = await initMcp();
+  tools.syncToolsToDb(getDb(), connected);
 
   try {
     cleanupOrphanUploads();

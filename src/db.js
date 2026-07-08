@@ -76,7 +76,7 @@ function migrate(db) {
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       name        TEXT    NOT NULL UNIQUE,
       description TEXT,
-      origin      TEXT    NOT NULL DEFAULT 'builtin',
+      origin      TEXT    NOT NULL DEFAULT '',
       enabled     INTEGER NOT NULL DEFAULT 1,
       sort_order  INTEGER NOT NULL DEFAULT 0,
       created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
@@ -109,6 +109,17 @@ function migrate(db) {
   // 既存DBには上記CREATE TABLEが効かないため、起動のたびに列の有無を確認して追加する(冪等)
   ensureColumn(db, 'users', 'system_prompt', 'TEXT');
   ensureColumn(db, 'conversations', 'system_prompt', 'TEXT');
+
+  cleanupBuiltinTools(db);
+}
+
+// 031: builtin撤去に伴う一度きりのクリーンアップ。origin='builtin'で残る旧get_server_time等の行を除去する。
+// 2回目以降の起動では対象行が無いため冪等(no-op)
+function cleanupBuiltinTools(db) {
+  const { changes } = db.prepare("DELETE FROM tools WHERE origin = 'builtin'").run();
+  if (changes > 0) {
+    logger.info(`db migrate: removed ${changes} legacy builtin tool row(s) from tools table`);
+  }
 }
 
 function ensureColumn(db, table, column, definition) {

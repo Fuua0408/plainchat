@@ -6,6 +6,7 @@ const { authMiddleware, requireAdmin } = require('../auth');
 const { encryptSecret, getKey } = require('../mcp/secretBox');
 const { getCatalog, getCatalogEntry } = require('../mcp/catalog');
 const { reloadMcp } = require('../mcp');
+const tools = require('../tools');
 const logger = require('../logger');
 
 const router = express.Router();
@@ -282,10 +283,12 @@ router.patch('/servers/:id', (req, res) => {
 });
 
 // POST /api/mcp/reload
-// closeMcp()→initMcp()を実行し、接続結果の要約を返す。トークン等の値は一切含めない
+// closeMcp()→initMcp()を実行し、接続結果の要約を返す。トークン等の値は一切含めない。
+// 接続成功サーバー集合でtools台帳を再同期し、リロードで消えたツールもここで孤児無効化する
 router.post('/reload', async (req, res) => {
   try {
     const { connected, failed } = await reloadMcp();
+    tools.syncToolsToDb(getDb(), connected);
     res.json({ connected, failed });
   } catch (e) {
     logger.error('mcp admin: reload failed', { error: e.message });
