@@ -473,4 +473,15 @@
 - **宿題(別枠)**: Node が正常シャットダウン経路を通らず落ちる(例 EADDRINUSE の未捕捉)と MCP stdio 子プロセスが
   孤児化。app.listen error 捕捉・uncaughtException/unhandledRejection での closeMcp・子プロセス生存連動等を
   独立タスクで設計(Windows のプロセス/シグナル制約に留意)。当面はクラッシュ後に手動 taskkill /F
+
+## 2026-07-07: MCP化の仕上げ(032完了)とクラッシュ時子プロセス後始末の宿題
+- **到達点**: 032 で builtin・後方互換seed・DEBUG_searxng依存を撤去し、ツール登録源を MCP のみに一本化。
+  syncToolsToDb は「接続成功サーバーから消えたツールのみ enabled=0、接続失敗サーバーとユーザー無効化は保持」の
+  慎重方式。DBが唯一の源(新規環境は設定画面から追加)。MCP化は利用可能な状態に到達
+- **宿題(別枠)**: Node が正常シャットダウン経路を通らず落ちる(例 EADDRINUSE の未捕捉)と MCP stdio 子プロセスが
+  孤児化。app.listen error 捕捉・uncaughtException/unhandledRejection での closeMcp・子プロセス生存連動等を
+  独立タスクで設計(Windows のプロセス/シグナル制約に留意)。当面はクラッシュ後に手動 taskkill /F
 - **宿題(既出)**: 履歴窓化+要約(長会話のプロンプト肥大)。033(既定引数機構)とは別トラック
+- **対処済み(033)**: 予防に集中(掃除はやらない)。app.listen error捕捉・uncaughtException/
+  unhandledRejection での closeMcp・exit 同期kill(PID厳密限定)・shuttingDown 一本化で実装。
+  process.kill(pid,'SIGKILL') が Windows でも実効。ベストエフォート(100%保証は狙わない)

@@ -82,6 +82,8 @@ async function connectServer(serverConfig) {
       ok: true,
       server: {
         label,
+        // stdioの子プロセスPID(異常終了時の同期kill後始末に使う)。httpには子プロセスが無いためnull
+        pid: transport === 'http' ? null : (clientTransport.pid ?? null),
         async listTools() {
           const res = await client.listTools();
           return res.tools || [];

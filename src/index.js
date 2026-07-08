@@ -7,7 +7,7 @@ const express = require('express');
 const logger = require('./logger');
 const { initDb, getDb } = require('./db');
 const tools = require('./tools');
-const { initMcp, closeMcp } = require('./mcp');
+const { initMcp, closeMcp, getActiveChildPids } = require('./mcp');
 const { cleanupOrphanUploads } = require('./attachmentCleanup');
 const authRoutes = require('./routes/auth');
 const conversationsRoutes = require('./routes/conversations');
@@ -50,13 +50,23 @@ async function main() {
     logger.error('attachment cleanup: unexpected failure at startup, continuing', { error: e.message });
   }
 
-  app.listen(PORT, () => {
+  const httpServer = app.listen(PORT, () => {
     logger.info(`plainchat server listening on port ${PORT}`);
+  });
+  // EADDRINUSE等のlisten時エラーを未捕捉例外にせず、起きているMCP子プロセスを後始末してから終了する
+  httpServer.on('error', (e) => {
+    crashShutdown('app.listen error', e);
   });
 }
 
+// 正常経路(SIGINT/SIGTERM)・異常経路(listenエラー/uncaughtException/unhandledRejection)を問わず、
+// 後始末(closeMcp)→終了は一度きりにする多重ガード。二重に走っても安全(冪等)
+let shuttingDown = false;
+
 // MCPクライアントをcloseし、mcp-searxng子プロセスを終了させてから終了する(孤児プロセス防止)
 async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
   logger.info(`plainchat: received ${signal}, shutting down`);
   try {
     await closeMcp();
@@ -66,10 +76,41 @@ async function shutdown(signal) {
   process.exit(0);
 }
 
+// 異常終了経路(listenエラー/uncaughtException/unhandledRejection)共通の後始末。
+// アプリを継続させるためではなく「落ちる前にMCP子プロセスを後始末する」ためのベストエフォートであり、
+// 後始末後は非ゼロ終了でよい。closeMcp自体の失敗はここで飲み込み、ハンドラ内エラーで無限ループしない
+async function crashShutdown(label, error) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.error(`plainchat: ${label}, shutting down`, { error: error && error.message });
+  try {
+    await closeMcp();
+  } catch (e) {
+    logger.error('plainchat: error during mcp shutdown', { error: e.message });
+  }
+  process.exit(1);
+}
+
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('uncaughtException', (e) => crashShutdown('uncaughtException', e));
+process.on('unhandledRejection', (reason) => {
+  crashShutdown('unhandledRejection', reason instanceof Error ? reason : new Error(String(reason)));
+});
+
+// 非同期closeが間に合わずプロセスが落ちる場合の最終防衛。exitハンドラは同期処理のみ実行できるため、
+// 保持しているstdio子プロセスPIDへ同期的にkillを撃つ。対象は自分が起動したPIDに厳密限定
+// (Windowsはprocess.kill(pid)がシグナル種別を無視し強制終了として働く)。多重に走ってもtry/catchで無害
+process.on('exit', () => {
+  for (const pid of getActiveChildPids()) {
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch (e) {
+      // 既に終了済み等はここで無視してよい(誤爆防止のため対象PID以外には触れない)
+    }
+  }
+});
 
 main().catch((e) => {
-  logger.error('plainchat: fatal startup error', { error: e.message });
-  process.exit(1);
+  crashShutdown('fatal startup error', e);
 });

@@ -38,16 +38,12 @@
     enabled=0 無効化。後方互換seed・DEBUG_searxng依存を撤去 = DBが唯一の源)
 
 - **次のタスク**:
-  - (安定性・宿題) クラッシュ時の MCP 子プロセス孤児化の対処 ← 次に着手予定
-  - 033 既定引数機構(MCPツールにサーバー既定引数=例 user_id を持たせ handler が注入。
+  - 034 既定引数機構(MCPツールにサーバー既定引数=例 user_id を持たせ handler が注入。
     029設定画面に欄追加・mcp_servers にカラム追加。NookResonance 連携を実用レベルに)
 
 - **未決/宿題**:
   - 履歴窓化+要約: chat.js は全履歴を無制限再送しており長会話でプロンプトが肥大。直近Nターン/トークン予算で
-    打ち切り+要約に畳む改修が必要(NookResonance の character/affinity 等の概念は持ち込まない)。別トラック
-  - クラッシュ時の子プロセス後始末: Node が正常シャットダウン経路(SIGTERM→closeMcp)を通らず落ちると
-    MCP(stdio)子プロセスが孤児化。Windows のシグナル制約(taskkill /F 必須)と相まって node.exe が溜まる。
-    app.listen error 捕捉・uncaughtException/unhandledRejection での closeMcp・子プロセス生存連動 等で対処予定
+    打ち切り+要約に畳む改修が必要(NookResonance の概念は持ち込まない)。別トラック
   - RAG: 未着手(embeddings/ベクタストア。同じ registry/ループ/LLM契約の上に載る想定)
 
 - **インフラ/既知の運用注意**:
@@ -62,14 +58,15 @@
   - DBバックアップ: WAL のため plainchat.db 単体コピーでは未チェックポイント分が漏れる。
     better-sqlite3 の .backup() か VACUUM INTO でスナップショットを取る
   - Windows: 外部/デタッチ済みプロセスへ正規の SIGTERM/SIGINT を送る手段が乏しい(taskkill /F 前提)。
-    MCP 子プロセスの後始末は closeMcp() 経由が基本
+    MCP 子プロセスの後始末は closeMcp() が基本で、異常終了時も app.listen error捕捉・uncaughtException/
+    unhandledRejection・exit 同期kill(033)で孤児化を予防。process.kill(pid,'SIGKILL') は Windows でも実効性あり
   - 運用: グローバル設定に Claude 系プロンプト改変版(約11,600字)。reasoning-budget(現6000)は
     レイテンシ/推論深度を見て調整可
 
 ## リポジトリ構成
-- src/index.js            : Expressエントリポイント(ポート 18091)。起動を async 化
-                            (MCP接続+登録→ツール台帳ミラー同期)。SIGINT/SIGTERM で closeMcp()
-- src/logger.js           : 簡易ロガー
+- src/index.js            : Expressエントリポイント(18091)。起動を async 化(MCP接続+登録→台帳同期)。
+                            全終了経路を shuttingDown で一本化(SIGINT/SIGTERM・listen error・
+                            uncaughtException/unhandledRejection→closeMcp、exit で子プロセス同期kill)
 - src/db.js               : SQLite接続・スキーマ初期化・初期ユーザーシード。tools / mcp_servers を冪等作成
 - src/auth.js             : JWT認可ミドルウェア(authMiddleware)+ 管理者ゲート requireAdmin
 - src/attachmentStorage.js    : data/の絶対パス化と attachment→ファイルパス解決(013〜017共有)
@@ -84,7 +81,8 @@
 - src/mcp/register.js     : listTools 結果を <label>__<tool>・origin='mcp:<label>' で registry へ登録
                             (再接続時に同 origin を一掃)
 - src/mcp/secretBox.js    : AES-256-GCM 封筒暗号(getKey/encryptSecret/decryptSecret。鍵は .env の SECRET_ENC_KEY)
-- src/mcp/index.js        : initMcp()/closeMcp()/reloadMcp() のオーケストレーション
+- src/mcp/index.js        : initMcp()/closeMcp()/reloadMcp() + activeChildPids 管理(getActiveChildPids)。
+                            closeMcp は close 成功分の pid のみ解放し、失敗分は exit の保険に残す- src/logger.js           : 簡易ロガー
 - src/mcp/catalog.js      : stdioカタログ(既知サーバーのテンプレ)。command/args はここのみ・UI/APIから編集不可
 - src/routes/auth.js      : ログイン/パスワード変更/me
 - src/routes/conversations.js : 会話CRUD+メッセージ一覧
