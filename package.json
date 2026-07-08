@@ -19,5 +19,8 @@
     "mcp-searxng": "^1.11.0",
     "multer": "^2.2.0",
     "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "sharp": "^0.35.3"
   }
 }
