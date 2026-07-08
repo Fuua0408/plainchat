@@ -46,12 +46,41 @@ const modalMessage = document.getElementById('modalMessage');
 const modalSaveBtn = document.getElementById('modalSaveBtn');
 const modalCloseBtn = document.getElementById('modalCloseBtn');
 
+const mcpAdminBtn = document.getElementById('mcpAdminBtn');
+const mcpModalOverlay = document.getElementById('mcpModalOverlay');
+const mcpModalCloseBtn = document.getElementById('mcpModalCloseBtn');
+const mcpListMessage = document.getElementById('mcpListMessage');
+const mcpServerList = document.getElementById('mcpServerList');
+const mcpAddServerBtn = document.getElementById('mcpAddServerBtn');
+const mcpReloadBtn = document.getElementById('mcpReloadBtn');
+const mcpReloadResult = document.getElementById('mcpReloadResult');
+const mcpServerForm = document.getElementById('mcpServerForm');
+const mcpFormTitle = document.getElementById('mcpFormTitle');
+const mcpFormLabel = document.getElementById('mcpFormLabel');
+const mcpFormEnabled = document.getElementById('mcpFormEnabled');
+const mcpTransportSelectWrap = document.getElementById('mcpTransportSelectWrap');
+const mcpFormTransport = document.getElementById('mcpFormTransport');
+const mcpHttpFields = document.getElementById('mcpHttpFields');
+const mcpFormUrl = document.getElementById('mcpFormUrl');
+const mcpFormHeaders = document.getElementById('mcpFormHeaders');
+const mcpHeadersStatus = document.getElementById('mcpHeadersStatus');
+const mcpStdioFields = document.getElementById('mcpStdioFields');
+const mcpFormCatalog = document.getElementById('mcpFormCatalog');
+const mcpEnvFields = document.getElementById('mcpEnvFields');
+const mcpFormMessage = document.getElementById('mcpFormMessage');
+const mcpFormCancelBtn = document.getElementById('mcpFormCancelBtn');
+const mcpFormSaveBtn = document.getElementById('mcpFormSaveBtn');
+
 let conversations = [];
 let currentConversationId = null;
 let currentConversationSystemPrompt = '';
 let sending = false;
 let currentAbortController = null;
 let modalMode = null; // 'global' | 'conversation'
+
+let mcpCatalog = [];
+let mcpServers = [];
+let mcpEditingId = null; // null = 追加モード、id = 編集モード
 
 // 1メッセージあたりの画像+ファイル合算の添付上限(フロントの定数。DECISIONS.md 2026-07-05参照)
 const MAX_ATTACHMENTS = 4;
@@ -109,6 +138,13 @@ function showChatView() {
   currentConversationSystemPrompt = '';
   conversationSettingsBtn.disabled = true;
   renderMessages([]);
+  applyAdminUi();
+}
+
+// 管理者のみMCPサーバー設定メニューを表示する(サーバー側403と二重で守る)
+function applyAdminUi() {
+  const user = getCurrentUser();
+  mcpAdminBtn.hidden = !(user && user.is_admin);
 }
 
 function setLoginError(msg) {
@@ -923,6 +959,344 @@ modalOverlay.addEventListener('click', (e) => {
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && modalOverlay.classList.contains('active')) closeModal();
+  if (e.key === 'Escape' && mcpModalOverlay.classList.contains('active')) closeMcpAdminModal();
+});
+
+// ─────────────────────────────────────────────
+// MCPサーバー設定モーダル(管理者のみ)
+// ─────────────────────────────────────────────
+function setMcpListMessage(text, kind) {
+  mcpListMessage.textContent = text || '';
+  mcpListMessage.className = 'modal-message' + (kind ? ' ' + kind : '');
+}
+
+function setMcpFormMessage(text, kind) {
+  mcpFormMessage.textContent = text || '';
+  mcpFormMessage.className = 'modal-message' + (kind ? ' ' + kind : '');
+}
+
+async function openMcpAdminModal() {
+  mcpModalOverlay.classList.add('active');
+  hideMcpServerForm();
+  setMcpListMessage('');
+  mcpReloadResult.textContent = '';
+  mcpReloadResult.className = 'mcp-reload-result';
+  await loadMcpAdminData();
+}
+
+const MCP_RELOAD_FAILURE_LABELS = {
+  timeout: 'タイムアウト',
+  unauthorized: '認証エラー(401)',
+  unreachable: '到達不能',
+  connect_failed: '接続失敗',
+  unknown: '不明なエラー',
+};
+
+async function handleMcpReload() {
+  mcpReloadBtn.disabled = true;
+  mcpReloadResult.className = 'mcp-reload-result';
+  mcpReloadResult.textContent = '再接続中…';
+  try {
+    const { connected, failed } = await reloadMcpServers();
+    const lines = [];
+    lines.push(connected.length > 0 ? `接続成功: ${connected.join(', ')}` : '接続成功: なし');
+    if (failed.length > 0) {
+      lines.push(
+        '接続失敗: ' +
+          failed
+            .map((f) => `${f.label}(${MCP_RELOAD_FAILURE_LABELS[f.reason] || f.reason})`)
+            .join(', ')
+      );
+    }
+    mcpReloadResult.textContent = lines.join('\n');
+    await loadMcpAdminData();
+  } catch (e) {
+    mcpReloadResult.className = 'mcp-reload-result error';
+    mcpReloadResult.textContent = e.message;
+  } finally {
+    mcpReloadBtn.disabled = false;
+  }
+}
+
+function closeMcpAdminModal() {
+  mcpModalOverlay.classList.remove('active');
+}
+
+async function loadMcpAdminData() {
+  try {
+    [mcpCatalog, mcpServers] = await Promise.all([getMcpCatalog(), listMcpServers()]);
+    renderMcpServerList();
+  } catch (e) {
+    setMcpListMessage(e.message, 'error');
+  }
+}
+
+function renderMcpServerList() {
+  mcpServerList.innerHTML = '';
+  if (mcpServers.length === 0) {
+    const li = document.createElement('li');
+    li.className = 'mcp-server-list-empty';
+    li.textContent = '登録されているMCPサーバーはありません';
+    mcpServerList.appendChild(li);
+    return;
+  }
+
+  for (const server of mcpServers) {
+    const li = document.createElement('li');
+    li.className = 'mcp-server-item';
+    li.dataset.id = server.id;
+
+    const info = document.createElement('div');
+    info.className = 'mcp-server-info';
+
+    const label = document.createElement('span');
+    label.className = 'mcp-server-label';
+    label.textContent = server.label;
+    label.title = server.label;
+    info.appendChild(label);
+
+    const transportBadge = document.createElement('span');
+    transportBadge.className = 'mcp-server-badge';
+    transportBadge.textContent = server.transport;
+    info.appendChild(transportBadge);
+
+    const enabledToggle = document.createElement('input');
+    enabledToggle.type = 'checkbox';
+    enabledToggle.className = 'mcp-enabled-toggle';
+    enabledToggle.checked = server.enabled;
+    enabledToggle.title = '有効/無効';
+    enabledToggle.addEventListener('change', () => handleMcpToggleEnabled(server.id, enabledToggle.checked));
+    info.appendChild(enabledToggle);
+
+    const secretKey = server.transport === 'http' ? 'has_headers' : 'has_env';
+    const secretBadge = document.createElement('span');
+    secretBadge.className = 'mcp-server-badge' + (server[secretKey] ? ' set' : '');
+    secretBadge.textContent = server[secretKey] ? 'シークレット設定済み' : 'シークレット未設定';
+    info.appendChild(secretBadge);
+
+    li.appendChild(info);
+
+    const actions = document.createElement('div');
+    actions.className = 'mcp-server-actions';
+
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.textContent = '編集';
+    editBtn.addEventListener('click', () => showMcpEditForm(server));
+    actions.appendChild(editBtn);
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'mcp-delete-btn';
+    deleteBtn.textContent = '削除';
+    deleteBtn.addEventListener('click', () => handleMcpDelete(server.id, server.label));
+    actions.appendChild(deleteBtn);
+
+    li.appendChild(actions);
+    mcpServerList.appendChild(li);
+  }
+}
+
+async function handleMcpToggleEnabled(id, enabled) {
+  try {
+    await updateMcpServer(id, { enabled });
+    await loadMcpAdminData();
+  } catch (e) {
+    setMcpListMessage(e.message, 'error');
+    await loadMcpAdminData();
+  }
+}
+
+async function handleMcpDelete(id, label) {
+  if (!confirm(`「${label}」を削除しますか？`)) return;
+  try {
+    await deleteMcpServer(id);
+    await loadMcpAdminData();
+  } catch (e) {
+    setMcpListMessage(e.message, 'error');
+  }
+}
+
+function updateMcpTransportFieldsVisibility() {
+  const transport = mcpFormTransport.value;
+  mcpHttpFields.hidden = transport !== 'http';
+  mcpStdioFields.hidden = transport !== 'stdio';
+}
+
+// カタログ選択に応じて必須env入力欄を作り直す。編集時はexistingHasEnvがtrueなら
+// プレースホルダで「未入力なら据え置き」を示す
+function renderMcpEnvFields(catalogEntry, existingHasEnv) {
+  mcpEnvFields.innerHTML = '';
+  if (!catalogEntry) return;
+
+  for (const key of catalogEntry.requiredEnvKeys || []) {
+    const label = document.createElement('label');
+    label.textContent = key;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.dataset.envKey = key;
+    input.placeholder = existingHasEnv ? '未入力なら既存の値を据え置き' : '必須';
+    label.appendChild(input);
+    mcpEnvFields.appendChild(label);
+  }
+}
+
+function showMcpAddForm() {
+  mcpEditingId = null;
+  mcpFormTitle.textContent = 'サーバーを追加';
+  mcpFormLabel.value = '';
+  mcpFormLabel.disabled = false;
+  mcpFormEnabled.checked = true;
+  mcpFormTransport.disabled = false;
+  mcpFormTransport.value = 'http';
+  mcpFormCatalog.disabled = false;
+  mcpFormUrl.value = '';
+  mcpFormHeaders.value = '';
+  mcpHeadersStatus.textContent = '';
+  setMcpFormMessage('');
+
+  renderMcpCatalogOptions();
+  updateMcpTransportFieldsVisibility();
+  mcpServerForm.hidden = false;
+  mcpFormLabel.focus();
+}
+
+function renderMcpCatalogOptions() {
+  mcpFormCatalog.innerHTML = '';
+  for (const entry of mcpCatalog) {
+    const option = document.createElement('option');
+    option.value = entry.id;
+    option.textContent = entry.displayName;
+    mcpFormCatalog.appendChild(option);
+  }
+  const selected = mcpCatalog.find((e) => e.id === mcpFormCatalog.value) || mcpCatalog[0] || null;
+  renderMcpEnvFields(selected, false);
+}
+
+function showMcpEditForm(server) {
+  mcpEditingId = server.id;
+  mcpFormTitle.textContent = `サーバーを編集: ${server.label}`;
+  mcpFormLabel.value = server.label;
+  mcpFormLabel.disabled = false;
+  mcpFormEnabled.checked = server.enabled;
+  mcpFormTransport.disabled = true; // 種別は作成後に変更不可
+  mcpFormTransport.value = server.transport;
+  setMcpFormMessage('');
+
+  if (server.transport === 'http') {
+    mcpFormUrl.value = server.url || '';
+    mcpFormHeaders.value = '';
+    mcpHeadersStatus.textContent = server.has_headers
+      ? '認証ヘッダ設定済み（未入力なら据え置き）'
+      : '認証ヘッダ未設定';
+  } else {
+    mcpFormCatalog.innerHTML = '';
+    const entry = mcpCatalog.find((e) => e.id === server.catalog_id) || null;
+    if (entry) {
+      const option = document.createElement('option');
+      option.value = entry.id;
+      option.textContent = entry.displayName;
+      mcpFormCatalog.appendChild(option);
+    }
+    mcpFormCatalog.disabled = true; // 現状カタログは1件のみ。将来複数対応時も編集時は据え置きに倒す
+    renderMcpEnvFields(entry, server.has_env);
+  }
+
+  updateMcpTransportFieldsVisibility();
+  mcpServerForm.hidden = false;
+}
+
+function hideMcpServerForm() {
+  mcpServerForm.hidden = true;
+  mcpEditingId = null;
+  mcpFormCatalog.disabled = false;
+}
+
+// "Name: value" 形式の行をヘッダーオブジェクトへ変換する。空行・コロン無しは無視
+function parseHeadersTextarea(text) {
+  const headers = {};
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const idx = trimmed.indexOf(':');
+    if (idx === -1) continue;
+    const name = trimmed.slice(0, idx).trim();
+    const value = trimmed.slice(idx + 1).trim();
+    if (name && value) headers[name] = value;
+  }
+  return headers;
+}
+
+function collectMcpEnvInput() {
+  const env = {};
+  for (const input of mcpEnvFields.querySelectorAll('input[data-env-key]')) {
+    const value = input.value.trim();
+    if (value) env[input.dataset.envKey] = value;
+  }
+  return env;
+}
+
+async function handleMcpFormSave() {
+  const label = mcpFormLabel.value.trim();
+  if (!label) {
+    setMcpFormMessage('ラベルを入力してください', 'error');
+    return;
+  }
+  const enabled = mcpFormEnabled.checked;
+  const transport = mcpFormTransport.value;
+  setMcpFormMessage('');
+
+  try {
+    if (mcpEditingId === null) {
+      // 追加
+      if (transport === 'http') {
+        const url = mcpFormUrl.value.trim();
+        const headers = parseHeadersTextarea(mcpFormHeaders.value);
+        const payload = { transport, label, enabled, url };
+        if (Object.keys(headers).length > 0) payload.headers = headers;
+        await createMcpServer(payload);
+      } else {
+        const catalogId = mcpFormCatalog.value;
+        const env = collectMcpEnvInput();
+        await createMcpServer({ transport, label, enabled, catalog_id: catalogId, env });
+      }
+    } else {
+      // 編集: label/enabledは常に送る。シークレットは新しい値が入力されたときだけ送る
+      const payload = { label, enabled };
+      if (transport === 'http') {
+        payload.url = mcpFormUrl.value.trim();
+        const headers = parseHeadersTextarea(mcpFormHeaders.value);
+        if (Object.keys(headers).length > 0) payload.headers = headers;
+      } else {
+        const env = collectMcpEnvInput();
+        if (Object.keys(env).length > 0) payload.env = env;
+      }
+      await updateMcpServer(mcpEditingId, payload);
+    }
+
+    hideMcpServerForm();
+    await loadMcpAdminData();
+  } catch (e) {
+    setMcpFormMessage(e.message, 'error');
+  }
+}
+
+mcpAdminBtn.addEventListener('click', openMcpAdminModal);
+mcpModalCloseBtn.addEventListener('click', closeMcpAdminModal);
+mcpModalOverlay.addEventListener('click', (e) => {
+  if (e.target === mcpModalOverlay) closeMcpAdminModal();
+});
+mcpAddServerBtn.addEventListener('click', showMcpAddForm);
+mcpReloadBtn.addEventListener('click', handleMcpReload);
+mcpFormCancelBtn.addEventListener('click', hideMcpServerForm);
+mcpFormSaveBtn.addEventListener('click', handleMcpFormSave);
+mcpFormTransport.addEventListener('change', () => {
+  updateMcpTransportFieldsVisibility();
+  if (mcpFormTransport.value === 'stdio') renderMcpCatalogOptions();
+});
+mcpFormCatalog.addEventListener('change', () => {
+  const entry = mcpCatalog.find((e) => e.id === mcpFormCatalog.value) || null;
+  renderMcpEnvFields(entry, false);
 });
 
 chatInput.addEventListener('keydown', (e) => {

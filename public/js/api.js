@@ -125,6 +125,34 @@ async function updateGlobalSettings(systemPrompt) {
   return data.system_prompt;
 }
 
+async function getMcpCatalog() {
+  const data = await apiJson('/api/mcp/catalog');
+  return data.catalog;
+}
+
+async function listMcpServers() {
+  const data = await apiJson('/api/mcp/servers');
+  return data.servers;
+}
+
+async function createMcpServer(payload) {
+  const data = await apiJson('/api/mcp/servers', { method: 'POST', body: JSON.stringify(payload) });
+  return data.server;
+}
+
+async function updateMcpServer(id, payload) {
+  const data = await apiJson(`/api/mcp/servers/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
+  return data.server;
+}
+
+async function deleteMcpServer(id) {
+  return apiJson(`/api/mcp/servers/${id}`, { method: 'DELETE' });
+}
+
+async function reloadMcpServers() {
+  return apiJson('/api/mcp/reload', { method: 'POST' });
+}
+
 async function generateTitle(id) {
   const data = await apiJson(`/api/conversations/${id}/generate-title`, { method: 'POST' });
   return data.conversation;

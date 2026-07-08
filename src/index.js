@@ -15,6 +15,7 @@ const conversationsRoutes = require('./routes/conversations');
 const chatRoutes = require('./routes/chat');
 const settingsRoutes = require('./routes/settings');
 const uploadsRoutes = require('./routes/uploads');
+const mcpAdminRoutes = require('./routes/mcpAdmin');
 
 const app = express();
 const PORT = process.env.PORT || 18091;
@@ -30,6 +31,7 @@ app.use('/api/conversations', conversationsRoutes);
 app.use('/api/conversations', chatRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/uploads', uploadsRoutes);
+app.use('/api/mcp', mcpAdminRoutes);
 
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
