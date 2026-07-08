@@ -145,6 +145,17 @@ function formatToolResultContent(result) {
   return typeof result === 'string' ? result : JSON.stringify(result);
 }
 
+// reasoning_content救済時のみ使う簡易な思考タグ除去(NookResonanceのcleanLLMResponse相当の考え方を
+// 参考にした最小実装。移植ではない)。除去後に実体が残らなければ呼び出し側が空応答扱いへフォールバックする
+function stripThinkingTags(text) {
+  return text
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+    .replace(/\[think\][\s\S]*?\[\/think\]/gi, '')
+    .replace(/\[thinking\][\s\S]*?\[\/thinking\]/gi, '')
+    .trim();
+}
+
 // POST /api/conversations/:id/chat
 router.post('/:id/chat', async (req, res) => {
   const db = getDb();
@@ -264,6 +275,7 @@ router.post('/:id/chat', async (req, res) => {
   }
 
   let fullText = '';
+  let reasoningText = '';
   let firstTokenReceived = false;
   let roundsUsed = 0;
 
@@ -304,6 +316,7 @@ router.post('/:id/chat', async (req, res) => {
       }
 
       fullText = '';
+      reasoningText = '';
       firstTokenReceived = false;
       let finishReason = null;
       const toolCallsByIndex = new Map();
@@ -333,6 +346,11 @@ router.post('/:id/chat', async (req, res) => {
             fullText += delta.content;
             firstTokenReceived = true;
             safeWrite(() => sendEvent(res, 'delta', { text: delta.content }));
+          }
+
+          // content とは別枠。ユーザーには出さず、最終ラウンドでcontentが皆無だった時の救済にのみ使う
+          if (delta.reasoning_content) {
+            reasoningText += delta.reasoning_content;
           }
 
           if (Array.isArray(delta.tool_calls)) {
@@ -400,6 +418,22 @@ router.post('/:id/chat', async (req, res) => {
     }
 
     clearTimeout(timeoutId);
+
+    // 最終回答ラウンドでcontentが一度も来ておらずreasoning_contentのみ得られた場合の救済。
+    // 途中までcontentが来ていた場合(firstTokenReceived)はここに来ないため誤発動しない
+    if (fullText.trim() === '' && reasoningText.trim() !== '') {
+      const fallbackText = stripThinkingTags(reasoningText);
+      if (fallbackText !== '') {
+        logger.info('chat: content was empty, using reasoning_content fallback', {
+          conversationId: req.params.id,
+          reasoningLength: reasoningText.length,
+          fallbackLength: fallbackText.length,
+        });
+        fullText = fallbackText;
+        firstTokenReceived = true;
+        safeWrite(() => sendEvent(res, 'delta', { text: fallbackText }));
+      }
+    }
 
     if (fullText.trim() === '') {
       settled = true;

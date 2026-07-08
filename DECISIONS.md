@@ -443,3 +443,25 @@
   - 接続・re-init は 029 では実装しない(030)。029 は保存までが範囲
 - **決定(登録源の枠は不変)**: builtin=stdio と同義の整理は維持。031 で撤去するのは検証用 get_server_time の
   中身であり、stdio(ローカル系)の枠は存続
+
+## 2026-07-07: LLM空応答の切り分けと chat.js の構造差分(NookResonance比較)
+- **事実(切り分け)**: 「挨拶でも空応答」の再現は、Git Bash(CP932)から curl へ日本語をシェル引数で渡した
+  文字化け(U+FFFD 汚染ペイロード)が原因のテスト手法バグ。--data-binary @file で正しく送ると同一環境で
+  正常応答。PlainChat 本体・LLMバックエンド設定(reasoning-budget 等)は原因ではない。
+  よって空応答を理由に後続タスク(既定引数機構/031)を止める必要はない
+- **本物の宿題(コード読解で確認、体感差と整合)**:
+  - PlainChat は delta.content のみ読み、空なら即「空応答」宣言。reasoning_content フォールバックが無い。
+    バックエンドが答えを reasoning_content 側に分類した場合に空応答化する(Nook はフォールバックで救済)
+  - PlainChat は全履歴を無制限再送。長い会話でプロンプトが際限なく肥大(Nook は ~1500tok+要約に窓化)。
+    長会話での空応答/レイテンシ/コスト差の主因
+- **是正方針(別枠タスク・MCP本流とは別軸)**:
+  - (優先・小) reasoning_content フォールバック: SSEで最終 content が空のとき、蓄積 reasoning_content を
+    <think> 等除去して最終テキストに採用。低リスク高効果。031 より先行してよい
+  - (独立・中) 履歴の窓化+要約: 全履歴無制限再送をやめ、直近Nターン/トークン予算で打ち切り、あふれを要約に
+    畳む。要約プロンプト/保存先は PlainChat 独自設計(Nook の character/affinity 等の概念は持ち込まない)。
+    テーマ的には実用機能拡充。MCP一段落後 or 別トラック
+  - (任意) stop シーケンス明示、内部ユーティリティ呼び出しの enable_thinking:false
+- **注記**: curl 日本語文字化けは 028a でも遭遇済み。検証は UTF-8 を --data-binary/ファイル経由で送る(HANDOVER記載)
+- **是正完了(reasoning_content フォールバック)**: content 皆無かつ reasoning_content 非空のときのみ
+  タグ除去して本文採用する救済を chat.js に実装済み。通常時・ツールループ中間ラウンドは無干渉。
+  履歴窓化+要約は引き続き別枠の宿題(未着手)
