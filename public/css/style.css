@@ -357,6 +357,20 @@ html, body {
   min-width: 0;
 }
 
+/* モバイルドロワー用の要素。PC幅では常に非表示(モバイル用メディアクエリ内でのみ表示する) */
+.sidebar-toggle-btn,
+.sidebar-close-btn {
+  display: none;
+}
+
+.sidebar-overlay {
+  display: none;
+}
+
+.sidebar-overlay[hidden] {
+  display: none;
+}
+
 .chat-pane.drag-over {
   outline: 3px dashed var(--accent);
   outline-offset: -3px;
@@ -1147,4 +1161,123 @@ html, body {
 
 .mcp-cancel-btn:hover {
   background: var(--hover-bg);
+}
+
+/* ─────────────────────────────────────────────
+   モバイル(狭い幅)専用レイアウト。PC幅の見た目・挙動は変更しない。
+   ここから下は既存スタイルをメディアクエリ内でのみ上書きする。
+   ───────────────────────────────────────────── */
+@media (max-width: 768px) {
+  #chatView.active {
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  /* サイドバーをドロワー化: 既定では画面外に隠す */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 200;
+    width: 82vw;
+    max-width: 300px;
+    height: 100%;
+    height: 100dvh;
+    box-shadow: 2px 0 12px rgba(0, 0, 0, 0.25);
+    transform: translateX(-100%);
+    transition: transform 0.2s ease-out;
+  }
+
+  .sidebar.drawer-open {
+    transform: translateX(0);
+  }
+
+  .sidebar-close-btn {
+    display: block;
+    align-self: flex-end;
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 50%;
+    background: var(--hover-bg);
+    color: var(--text-primary);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 150;
+    background: rgba(0, 0, 0, 0.5);
+  }
+
+  .sidebar-overlay[hidden] {
+    display: none;
+  }
+
+  /* サイドバーが常時レイアウト幅を持たないので、チャット領域が自然に全幅になる */
+  .chat-pane {
+    width: 100%;
+  }
+
+  .chat-header {
+    justify-content: space-between;
+    padding: 8px 12px;
+  }
+
+  .sidebar-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-size: 18px;
+    cursor: pointer;
+  }
+
+  .message-list {
+    padding: 12px;
+  }
+
+  .message {
+    max-width: 88%;
+  }
+
+  /* 入力欄: テキストエリアを1行に確保し、ボタン類はその下に折り返す */
+  .chat-input-form {
+    flex-wrap: wrap;
+    padding: 8px 10px;
+    gap: 6px;
+  }
+
+  .chat-input-form textarea {
+    order: 1;
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .attach-btn {
+    order: 2;
+    padding: 0 10px;
+    font-size: 15px;
+  }
+
+  .chat-input-form button[type="submit"] {
+    order: 3;
+    margin-left: auto;
+    padding: 0 16px;
+  }
+
+  .attach-preview-list {
+    padding: 8px 10px 0;
+  }
 }

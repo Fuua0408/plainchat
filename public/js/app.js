@@ -23,6 +23,11 @@ const themeToggleBtn = document.getElementById('themeToggleBtn');
 const settingsBtn = document.getElementById('settingsBtn');
 const conversationSettingsBtn = document.getElementById('conversationSettingsBtn');
 
+const sidebar = document.getElementById('sidebar');
+const sidebarToggleBtn = document.getElementById('sidebarToggleBtn');
+const sidebarCloseBtn = document.getElementById('sidebarCloseBtn');
+const sidebarOverlay = document.getElementById('sidebarOverlay');
+
 const messageList = document.getElementById('messageList');
 const chatForm = document.getElementById('chatForm');
 const chatInput = document.getElementById('chatInput');
@@ -139,6 +144,29 @@ function showChatView() {
   conversationSettingsBtn.disabled = true;
   renderMessages([]);
   applyAdminUi();
+}
+
+// ─────────────────────────────────────────────
+// サイドバードロワー(モバイル幅のみ。PC幅ではCSSにより非表示・無効化)
+// ─────────────────────────────────────────────
+function openSidebarDrawer() {
+  sidebar.classList.add('drawer-open');
+  sidebarOverlay.hidden = false;
+  sidebarToggleBtn.setAttribute('aria-expanded', 'true');
+}
+
+function closeSidebarDrawer() {
+  sidebar.classList.remove('drawer-open');
+  sidebarOverlay.hidden = true;
+  sidebarToggleBtn.setAttribute('aria-expanded', 'false');
+}
+
+function toggleSidebarDrawer() {
+  if (sidebar.classList.contains('drawer-open')) {
+    closeSidebarDrawer();
+  } else {
+    openSidebarDrawer();
+  }
 }
 
 // 管理者のみMCPサーバー設定メニューを表示する(サーバー側403と二重で守る)
@@ -567,6 +595,7 @@ function createThinkingBubble() {
 async function selectConversation(id) {
   currentConversationId = id;
   updateActiveConversationHighlight();
+  closeSidebarDrawer();
   setChatError('');
   try {
     const { conversation, messages } = await getMessages(id);
@@ -1337,6 +1366,9 @@ logoutBtn.addEventListener('click', handleLogout);
 newConversationBtn.addEventListener('click', handleNewConversation);
 chatForm.addEventListener('submit', handleSend);
 themeToggleBtn.addEventListener('click', toggleTheme);
+sidebarToggleBtn.addEventListener('click', toggleSidebarDrawer);
+sidebarCloseBtn.addEventListener('click', closeSidebarDrawer);
+sidebarOverlay.addEventListener('click', closeSidebarDrawer);
 
 // ─────────────────────────────────────────────
 // 初期化

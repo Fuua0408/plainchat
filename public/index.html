@@ -31,7 +31,8 @@
   </section>
 
   <section id="chatView" class="view">
-    <aside class="sidebar">
+    <aside id="sidebar" class="sidebar">
+      <button id="sidebarCloseBtn" type="button" class="sidebar-close-btn" aria-label="メニューを閉じる">×</button>
       <button id="newConversationBtn" type="button" class="new-conversation-btn">+ 新しい会話</button>
 
       <div class="conversation-search">
@@ -59,8 +60,11 @@
       <button id="logoutBtn" type="button" class="logout-btn">ログアウト</button>
     </aside>
 
+    <div id="sidebarOverlay" class="sidebar-overlay" hidden></div>
+
     <main id="chatPane" class="chat-pane">
       <div class="chat-header">
+        <button id="sidebarToggleBtn" type="button" class="sidebar-toggle-btn" aria-label="メニューを開く" aria-expanded="false">☰</button>
         <button id="conversationSettingsBtn" type="button" class="conversation-settings-btn" disabled>会話設定</button>
       </div>
       <div id="messageList" class="message-list"></div>
