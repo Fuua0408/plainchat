@@ -46,6 +46,11 @@
     打ち切り+要約に畳む改修が必要(NookResonance の概念は持ち込まない)。別トラック
   - RAG: 未着手(embeddings/ベクタストア。同じ registry/ループ/LLM契約の上に載る想定)
 
+- **ブラウザキャッシュ(035で遭遇)**: フロント資産(css/js)を変更しても実機ブラウザが古い資産を
+  掴み、変更が反映されない(エミュレーションは毎回フレッシュ取得のため露呈せず、実機だけ旧UIで動く)。
+  対処: index.html の css/js リンクに ?v=NNN のクエリを付けて更新(キャッシュバスティング)。
+  フロント改修時は忘れずにバージョンを上げる。恒久対策(配信時に mtime/hash で自動付与)は将来タスク候補
+
 - **インフラ/既知の運用注意**:
   - LLM: n_ctx=81920 / LLM_MAX_TOKENS=32768(実.env)。textgen-webui が llama.cpp を内部起動(2段構成)、
     extra-flags に `--reasoning-budget 6000 --reasoning-budget-message "..."`(空応答対策)
