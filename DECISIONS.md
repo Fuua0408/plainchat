@@ -556,3 +556,19 @@
     ファイル反映が中断した状態
 - **次回再開時にやること**: (1) コネクタ復旧確認、(2) mcp-searxng の tool_result 実物確認、
   (3) 表示方法の確認、(4) 確定後に実装プロンプトを起票(採番は038の次)
+
+## 2026-07(039予定): WEB検索の出典表示(②)— 設計確定
+- **決定(保存)**: tool_invocations は result_text に生テキストをそのまま1カラム保存する。ツール固有の
+  フォーマットへ合わせた構造化カラム・解析は保存時には行わない(025/DECISIONS「MCPツール呼び出し全般を
+  汎用的に永続化」の方針を継承。ツールごとの特別扱いを保存層に持ち込まない)
+- **決定(表示時の解析)**: フロントエンド(public/js/app.js)に tool_name→パーサー のルックアップを持ち、
+  既知フォーマット(まず searxng__searxng_web_search)に一致した場合のみ result_text を
+  Title/Description/URL/Relevance Score の行として整形表示する。未知のツールは raw text を
+  そのまま(pre書式)表示にフォールバックする。この解析はAPI契約・DBスキーマに影響しない表示層の機能
+- **決定(mcp-searxngの実際の出力形式・調査結果)**: searxng_web_search は検索結果ごとに
+  「Title/Description/URL/Relevance Score」の4行ブロックへ整形し、結果間を空行(\n\n)区切りで
+  連結した単一テキストブロックとして返す(ihor-sokoliuk/mcp-searxng の src/search.ts 実装より確認)。
+  JSON配列ではなく半構造化テキスト1本
+- **決定(表示UI)**: assistantメッセージ下に折りたたみ(デフォルト閉じ・クリックで展開)。
+  展開でラウンドごとの往復(ツール名・引数・結果)を表示する
+- **採番**: 039
