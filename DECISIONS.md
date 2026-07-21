@@ -522,3 +522,37 @@
   (デスクトップ前提の旧文言はモバイルで誤解を招くため)。app.js のみ ?v=037 に更新
 - **検証**: desktop(Shift+Enter改行 / Enter送信 / 合成IME Enterは非送信)・mobile 375px
   (Enterで改行・非送信)を Playwright で確認。既存adminで検証しコンソールエラー無し
+
+## 2026-07(038): 改善フェーズ — モーダルのドラッグ誤クローズ修正
+- **決定**: オーバーレイ・クリックでの閉じ判定を「mousedown 起点もオーバーレイ、かつ click も
+  オーバーレイのときのみ閉じる」に変更。共通ヘルパ attachOverlayClickToClose(overlayEl, closeFn) に
+  まとめ、汎用モーダル(modalOverlay/closeModal)と MCP設定モーダル(mcpModalOverlay/closeMcpAdminModal)
+  の両方に適用。ドラッグ選択の mouseup がオーバーレイに着地しても閉じない
+- **スコープ**: ×/Esc の閉じ・保存等は不変。sidebarOverlay(ドロワー)は対象外。app.js のみ ?v=038
+- **検証**: 両モーダルでドラッグ選択→オーバーレイで release しても閉じない / 空オーバーレイの素直な
+  クリックで閉じる / × と Esc で閉じる、を Playwright で確認。一時admin作成→検証後削除・コンソールエラー無し
+
+## 2026-07: WEB検索の出典表示(②)— 設計相談中(未実装・未採番)
+- **背景**: WEB検索を使わせた後の回答内容が不審なことがあり、「モデルが実際に何を参照したか」を
+  検証できるようにしたい。モデルの自己申告(本文中の要約)ではなく、ツールが返した生データを
+  残す必要がある、という着眼から出発
+- **決定(方式)**: 案C(出典の永続化)を採用。「往復はターン内一時利用でDB非保存」という既存方針
+  (025)に、tool_call/tool_result を message に紐づけて保存する例外を新設する
+- **決定(保存範囲)**: WEB検索専用ではなく、**MCPツール呼び出し全般を汎用的に永続化**する。
+  理由: chat.js のループは元々ツール非依存設計(025)であり、検索だけ特別扱いする分岐を足すより
+  汎用ログの方が実装が単純。副産物として将来的に他ツール(NookResonance等)の往復も監査可能になる
+- **想定スキーマ(未確定・要コード確認)**: attachments(013)と同型のパターンを想定。
+  新テーブル仮称 tool_invocations: id, message_id, conversation_id, user_id, round_index,
+  tool_name, arguments_json, result_text, created_at。multi-round ループ中はメモリに蓄積し、
+  最終 assistant メッセージ保存でIDが確定した時点で紐づけて一括INSERT(attachmentsのmessage_id
+  後付けパターンを踏襲)
+- **未決・要確認**:
+  - assistantメッセージ下の表示方法(常時展開 or 折りたたみ)— 未回答のまま設計相談を中断
+  - mcp-searxng の tool_result が構造化された複数結果(title/url/snippet配列)で返るのか、
+    整形済み1本のテキストブロックで返るのか — ナレッジ/記憶で決め打ちせず実物確認が必要
+    (src/mcp 配下・実際のtool_result ログで確認する)。これでスキーマの粒度(1ソース1行 保存 vs
+    生テキストそのまま保存)が変わる
+  - Filesystemコネクタが会話中に不安定になり(再インストール後も未復旧)、コード確認・
+    ファイル反映が中断した状態
+- **次回再開時にやること**: (1) コネクタ復旧確認、(2) mcp-searxng の tool_result 実物確認、
+  (3) 表示方法の確認、(4) 確定後に実装プロンプトを起票(採番は038の次)

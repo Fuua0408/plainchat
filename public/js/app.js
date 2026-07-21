@@ -983,9 +983,17 @@ settingsBtn.addEventListener('click', openGlobalSettingsModal);
 conversationSettingsBtn.addEventListener('click', openConversationSettingsModal);
 modalCloseBtn.addEventListener('click', closeModal);
 modalSaveBtn.addEventListener('click', handleModalSave);
-modalOverlay.addEventListener('click', (e) => {
-  if (e.target === modalOverlay) closeModal();
-});
+function attachOverlayClickToClose(overlayEl, closeFn) {
+  let downOnOverlay = false;
+  overlayEl.addEventListener('mousedown', (e) => {
+    downOnOverlay = (e.target === overlayEl);
+  });
+  overlayEl.addEventListener('click', (e) => {
+    if (downOnOverlay && e.target === overlayEl) closeFn();
+    downOnOverlay = false;
+  });
+}
+attachOverlayClickToClose(modalOverlay, closeModal);
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && modalOverlay.classList.contains('active')) closeModal();
   if (e.key === 'Escape' && mcpModalOverlay.classList.contains('active')) closeMcpAdminModal();
@@ -1312,9 +1320,7 @@ async function handleMcpFormSave() {
 
 mcpAdminBtn.addEventListener('click', openMcpAdminModal);
 mcpModalCloseBtn.addEventListener('click', closeMcpAdminModal);
-mcpModalOverlay.addEventListener('click', (e) => {
-  if (e.target === mcpModalOverlay) closeMcpAdminModal();
-});
+attachOverlayClickToClose(mcpModalOverlay, closeMcpAdminModal);
 mcpAddServerBtn.addEventListener('click', showMcpAddForm);
 mcpReloadBtn.addEventListener('click', handleMcpReload);
 mcpFormCancelBtn.addEventListener('click', hideMcpServerForm);
