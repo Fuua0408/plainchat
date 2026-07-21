@@ -741,6 +741,131 @@ html, body {
   display: none;
 }
 
+/* ツール呼び出し(tool_invocations)の折りたたみ表示(039) */
+.tool-invocations {
+  margin-top: 8px;
+  border-top: 1px solid var(--bubble-assistant-border);
+  padding-top: 8px;
+}
+
+.tool-invocations-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tool-invocations-header:hover {
+  background: var(--hover-bg);
+}
+
+.tool-invocations-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.tool-invocations-body[hidden] {
+  display: none;
+}
+
+.tool-invocation-item {
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--bg-surface);
+}
+
+.tool-invocation-item.tool-invocation-error {
+  border-color: var(--error-color);
+  background: var(--error-bg);
+}
+
+.tool-invocation-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.tool-invocation-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.tool-invocation-status {
+  font-size: 12px;
+}
+
+.tool-invocation-status.status-error {
+  color: var(--error-color);
+}
+
+.tool-invocation-status.status-success {
+  color: var(--text-secondary);
+}
+
+.tool-invocation-args,
+.tool-invocation-result-raw {
+  margin: 0 0 6px;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--hover-bg);
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+
+.tool-invocation-result-raw {
+  margin-bottom: 0;
+}
+
+.searxng-result-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.searxng-result-card {
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--bg-primary);
+}
+
+.searxng-result-title {
+  display: block;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.searxng-result-desc {
+  margin: 4px 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.searxng-result-score {
+  font-size: 11px;
+  color: var(--text-secondary);
+  opacity: 0.8;
+}
+
 .chat-input-form {
   display: flex;
   gap: 8px;
@@ -1279,5 +1404,13 @@ html, body {
 
   .attach-preview-list {
     padding: 8px 10px 0;
+  }
+
+  .tool-invocations-header {
+    font-size: 11px;
+  }
+
+  .tool-invocation-item {
+    padding: 6px 8px;
   }
 }

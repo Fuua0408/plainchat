@@ -236,9 +236,31 @@ router.get('/:id/messages', (req, res) => {
     }
   }
 
+  const toolInvocationsByMessage = new Map();
+  if (messages.length > 0) {
+    const placeholders = messages.map(() => '?').join(',');
+    const toolInvocationRows = db
+      .prepare(
+        `SELECT message_id, round_index, tool_name, arguments_json, status, result_text
+         FROM tool_invocations WHERE message_id IN (${placeholders}) ORDER BY round_index ASC`
+      )
+      .all(...messages.map((m) => m.id));
+    for (const row of toolInvocationRows) {
+      if (!toolInvocationsByMessage.has(row.message_id)) toolInvocationsByMessage.set(row.message_id, []);
+      toolInvocationsByMessage.get(row.message_id).push({
+        round_index: row.round_index,
+        tool_name: row.tool_name,
+        arguments_json: row.arguments_json,
+        status: row.status,
+        result_text: row.result_text,
+      });
+    }
+  }
+
   const messagesWithAttachments = messages.map((m) => ({
     ...m,
     attachments: attachmentsByMessage.get(m.id) || [],
+    tool_invocations: toolInvocationsByMessage.get(m.id) || [],
   }));
 
   res.json({

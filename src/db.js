@@ -72,6 +72,24 @@ function migrate(db) {
     CREATE INDEX IF NOT EXISTS idx_attachments_conversation_id
       ON attachments (conversation_id);
 
+    -- 039: MCPツール呼び出し(tool_call/tool_result)の往復をassistantメッセージに紐づけて永続化する。
+    -- attachmentsに倣いconversation_id/user_idを直接持たせ、所有者スコープの確認を簡潔にする
+    CREATE TABLE IF NOT EXISTS tool_invocations (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      message_id      INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+      conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+      user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      round_index     INTEGER NOT NULL,
+      tool_name       TEXT    NOT NULL,
+      arguments_json  TEXT    NOT NULL,
+      status          TEXT    NOT NULL,
+      result_text     TEXT    NOT NULL,
+      created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_tool_invocations_message_id
+      ON tool_invocations (message_id);
+
     CREATE TABLE IF NOT EXISTS tools (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       name        TEXT    NOT NULL UNIQUE,

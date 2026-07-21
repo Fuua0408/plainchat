@@ -541,6 +541,161 @@ function revokeMessageObjectUrls() {
   messageObjectUrls = [];
 }
 
+// ─────────────────────────────────────────────
+// ツール呼び出し(tool_invocations)の折りたたみ表示(039)
+// 送信直後(SSE doneイベント)・履歴再読込(GET /:id/messages)の両経路で共用する
+// ─────────────────────────────────────────────
+
+// mcp-searxngの戻り値(「Title: /Description: /URL: /Relevance Score: 」の4行ブロックを
+// 空行区切りで連結した単一テキスト)をパースする。想定形式に合わなければnullを返しフォールバックさせる
+function parseSearxngResult(resultText) {
+  const blocks = resultText
+    .replace(/\r\n/g, '\n')
+    .split(/\n\s*\n/)
+    .map((b) => b.trim())
+    .filter(Boolean);
+  if (blocks.length === 0) return null;
+
+  const items = [];
+  for (const block of blocks) {
+    let title = null, description = null, url = null, score = null;
+    for (const line of block.split('\n')) {
+      const m = line.match(/^Title:\s*(.*)$/i);
+      if (m) { title = m[1].trim(); continue; }
+      const d = line.match(/^Description:\s*(.*)$/i);
+      if (d) { description = d[1].trim(); continue; }
+      const u = line.match(/^URL:\s*(.*)$/i);
+      if (u) { url = u[1].trim(); continue; }
+      const s = line.match(/^Relevance Score:\s*(.*)$/i);
+      if (s) { score = s[1].trim(); continue; }
+    }
+    if (!title || !url) return null; // 想定外の形式は丸ごとフォールバック
+    items.push({ title, description, url, score });
+  }
+  return items;
+}
+
+// tool_name → パーサー のルックアップ。未知のtool_nameはraw textフォールバックになる
+const TOOL_RESULT_PARSERS = {
+  'searxng__searxng_web_search': parseSearxngResult,
+};
+
+function createSearxngResultCards(items) {
+  const wrap = document.createElement('div');
+  wrap.className = 'searxng-result-cards';
+  for (const item of items) {
+    const card = document.createElement('div');
+    card.className = 'searxng-result-card';
+
+    const titleLink = document.createElement('a');
+    titleLink.href = item.url;
+    titleLink.target = '_blank';
+    titleLink.rel = 'noopener noreferrer';
+    titleLink.className = 'searxng-result-title';
+    titleLink.textContent = item.title;
+    card.appendChild(titleLink);
+
+    if (item.description) {
+      const desc = document.createElement('p');
+      desc.className = 'searxng-result-desc';
+      desc.textContent = item.description;
+      card.appendChild(desc);
+    }
+
+    if (item.score) {
+      const score = document.createElement('span');
+      score.className = 'searxng-result-score';
+      score.textContent = `関連度: ${item.score}`;
+      card.appendChild(score);
+    }
+
+    wrap.appendChild(card);
+  }
+  return wrap;
+}
+
+// パース成功時はカード列、失敗時・未知tool_nameの場合はraw textの<pre>フォールバック
+function renderToolResult(toolName, resultText) {
+  const parser = TOOL_RESULT_PARSERS[toolName];
+  const parsed = parser ? parser(resultText) : null;
+  if (parsed) return createSearxngResultCards(parsed);
+
+  const pre = document.createElement('pre');
+  pre.className = 'tool-invocation-result-raw';
+  pre.textContent = resultText;
+  return pre;
+}
+
+function formatToolArguments(argumentsJson) {
+  try {
+    return JSON.stringify(JSON.parse(argumentsJson), null, 2);
+  } catch {
+    return argumentsJson;
+  }
+}
+
+function createToolInvocationItem(inv) {
+  const item = document.createElement('div');
+  item.className = 'tool-invocation-item' + (inv.status === 'error' ? ' tool-invocation-error' : '');
+
+  const meta = document.createElement('div');
+  meta.className = 'tool-invocation-meta';
+
+  const nameEl = document.createElement('span');
+  nameEl.className = 'tool-invocation-name';
+  nameEl.textContent = inv.tool_name;
+  meta.appendChild(nameEl);
+
+  const statusEl = document.createElement('span');
+  statusEl.className = 'tool-invocation-status ' + (inv.status === 'error' ? 'status-error' : 'status-success');
+  statusEl.textContent = inv.status === 'error' ? '❌ エラー' : '✅ 成功';
+  meta.appendChild(statusEl);
+
+  item.appendChild(meta);
+
+  const argsPre = document.createElement('pre');
+  argsPre.className = 'tool-invocation-args';
+  argsPre.textContent = formatToolArguments(inv.arguments_json);
+  item.appendChild(argsPre);
+
+  item.appendChild(renderToolResult(inv.tool_name, inv.result_text));
+
+  return item;
+}
+
+// 1件以上あるときだけデフォルト閉じの折りたたみセクションを返す(0件ならnull=非表示)
+function createToolInvocationsSection(toolInvocations) {
+  if (!toolInvocations || toolInvocations.length === 0) return null;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'tool-invocations';
+
+  const header = document.createElement('button');
+  header.type = 'button';
+  header.className = 'tool-invocations-header';
+  header.textContent = `🔧 ツール呼び出し(${toolInvocations.length}件)`;
+  header.setAttribute('aria-expanded', 'false');
+
+  const body = document.createElement('div');
+  body.className = 'tool-invocations-body';
+  body.hidden = true;
+
+  header.addEventListener('click', () => {
+    const willOpen = body.hidden;
+    body.hidden = !willOpen;
+    header.setAttribute('aria-expanded', String(willOpen));
+  });
+
+  const sorted = [...toolInvocations].sort((a, b) => a.round_index - b.round_index);
+  for (const inv of sorted) {
+    body.appendChild(createToolInvocationItem(inv));
+  }
+
+  wrap.appendChild(header);
+  wrap.appendChild(body);
+  return wrap;
+}
+
 async function renderMessages(messages) {
   revokeMessageObjectUrls();
   messageList.innerHTML = '';
@@ -553,13 +708,14 @@ async function renderMessages(messages) {
   }
   for (const m of messages) {
     const items = await buildAttachmentItems(m.attachments);
-    appendMessageBubble(m.role, m.content, items);
+    appendMessageBubble(m.role, m.content, items, m.tool_invocations);
   }
   scrollToBottom();
 }
 
 // items: createMessageAttachmentsEl が受け付ける画像/ファイルの表示用item配列
-function appendMessageBubble(role, text, items) {
+// toolInvocations: 1件以上あればメッセージ下に折りたたみセクションを追加する(039)
+function appendMessageBubble(role, text, items, toolInvocations) {
   const existingEmpty = messageList.querySelector('.empty-state');
   if (existingEmpty) existingEmpty.remove();
   const bubble = document.createElement('div');
@@ -574,6 +730,9 @@ function appendMessageBubble(role, text, items) {
   } else {
     setBubbleContent(bubble, role, text);
   }
+
+  const toolSection = createToolInvocationsSection(toolInvocations);
+  if (toolSection) bubble.appendChild(toolSection);
 
   messageList.appendChild(bubble);
   scrollToBottom();
@@ -889,10 +1048,12 @@ async function handleSend(e) {
         assistantBubble.textContent = assistantText;
         scrollToBottom();
       },
-      onDone: async () => {
+      onDone: async (data) => {
         currentAbortController = null;
         assistantBubble.classList.remove('streaming');
         setBubbleContent(assistantBubble, 'assistant', assistantText);
+        const toolSection = createToolInvocationsSection(data && data.tool_invocations);
+        if (toolSection) assistantBubble.appendChild(toolSection);
         scrollToBottom();
         setSending(false);
         await loadConversations();

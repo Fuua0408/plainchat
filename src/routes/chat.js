@@ -271,13 +271,33 @@ router.post('/:id/chat', async (req, res) => {
       .run(req.params.id, 'assistant', text);
     db.prepare("UPDATE conversations SET updated_at = datetime('now') WHERE id = ?")
       .run(req.params.id);
-    return result.lastInsertRowid;
+    const messageId = result.lastInsertRowid;
+    saveToolInvocations(messageId);
+    return messageId;
+  }
+
+  // saveAssistantMessageが実際にメッセージを保存した経路でのみ呼ぶ。
+  // 最初のトークン前の失敗(メッセージ自体を保存しない既存方針)ではtoolInvocationsBufferは捨てる
+  function saveToolInvocations(messageId) {
+    if (toolInvocationsBuffer.length === 0) return;
+    const stmt = db.prepare(
+      `INSERT INTO tool_invocations
+         (message_id, conversation_id, user_id, round_index, tool_name, arguments_json, status, result_text)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    for (const inv of toolInvocationsBuffer) {
+      stmt.run(
+        messageId, req.params.id, req.user.id,
+        inv.round_index, inv.tool_name, inv.arguments_json, inv.status, inv.result_text
+      );
+    }
   }
 
   let fullText = '';
   let reasoningText = '';
   let firstTokenReceived = false;
   let roundsUsed = 0;
+  const toolInvocationsBuffer = [];
 
   try {
     for (;;) {
@@ -412,6 +432,14 @@ router.post('/:id/chat', async (req, res) => {
 
         messages.push({ role: 'tool', tool_call_id: toolCall.id, content: resultContent });
         safeWrite(() => sendEvent(res, 'tool_result', { name: toolName, status }));
+
+        toolInvocationsBuffer.push({
+          round_index: roundsUsed,
+          tool_name: toolName,
+          arguments_json: parsedArgs.ok ? JSON.stringify(parsedArgs.value) : toolCall.function.arguments,
+          status,
+          result_text: resultContent,
+        });
       }
 
       roundsUsed += 1;
@@ -443,7 +471,7 @@ router.post('/:id/chat', async (req, res) => {
     }
 
     const messageId = saveAssistantMessage(fullText);
-    safeWrite(() => sendEvent(res, 'done', { messageId }));
+    safeWrite(() => sendEvent(res, 'done', { messageId, tool_invocations: toolInvocationsBuffer }));
     settled = true;
     safeWrite(() => res.end());
   } catch (e) {
