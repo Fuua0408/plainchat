@@ -1329,7 +1329,13 @@ mcpFormCatalog.addEventListener('change', () => {
 });
 
 chatInput.addEventListener('keydown', (e) => {
+  if (window.matchMedia('(max-width:768px)').matches) {
+    return;
+  }
   if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.isComposing || e.keyCode === 229) {
+      return;
+    }
     e.preventDefault();
     chatForm.requestSubmit();
   }

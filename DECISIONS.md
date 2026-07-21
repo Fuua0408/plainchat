@@ -485,3 +485,40 @@
 - **対処済み(033)**: 予防に集中(掃除はやらない)。app.listen error捕捉・uncaughtException/
   unhandledRejection での closeMcp・exit 同期kill(PID厳密限定)・shuttingDown 一本化で実装。
   process.kill(pid,'SIGKILL') が Windows でも実効。ベストエフォート(100%保証は狙わない)
+
+## 2026-07(034): PWA対応(ホーム画面アイコン / manifest)
+- **決定**: Android等で「ホーム画面に追加」→ standalone 起動できるよう manifest.json +
+  アイコンを用意。theme_color #2563eb / background_color #ffffff。アイコンは青地#2563eb・
+  白吹き出し+P(通常版/maskable版のマスターSVGから 192/512/maskable-512/apple-touch 180 を書き出し)
+- **スコープ**: フロントの静的追加のみ。Service Worker・オフライン対応は導入しない(将来必要になってから)。
+  chat.js/MCP/DB/認証は不変。manifest・icons は未ログインでも200で取得できる公開パスに置く
+  (認証保護下に置かない)
+
+## 2026-07(035): モバイルレスポンシブ対応(最小・破綻解消)
+- **決定**: @media(max-width:768px) 内でのみモバイルレイアウトを上書きし、PC(2カラム)の
+  既存ルールは無干渉。狭い幅ではサイドバーをドロワー化(☰で開閉・オーバーレイ/閉じる/
+  会話選択/新規で閉じる)+チャット全幅、入力欄の縦潰れ・ボタン潰れ・横はみ出しを解消。
+  ライト/ダーク両対応
+- **スコープ**: 「破綻解消」まで(快適性の作り込み・モーダルのモバイル最適化は別途)。
+  chat.js/MCP/DB/認証/API は不変
+- **注記(以降の基準)**: この @media(max-width:768px) がモバイル判定の基準となる
+  (037 のEnter端末別挙動もこの閾値に整合)。またこの前後でフロント資産の ?v= キャッシュ
+  バスティングの罠(css/js 変更時に index.html の ?v= を上げないと実機が旧資産を掛む)に
+  二度遭遇。恒久対策(配信時 mtime/hash 自動付与)は未実装＝改善候補
+
+## 2026-07(036): 欠番
+- 036 はキャッシュ問題を☰配線と誤診した仕様書を作ったが、真因がブラウザキャッシュだったため破棄。
+  欠番として欠番番号は再利用しない
+
+## 2026-07(037): 改善フェーズ — メッセージ入力Enterの端末別挙動 + IME誤送信ガード
+- **決定(モバイル)**: モバイル幅(window.matchMedia('(max-width:768px)').matches が真)では
+  chatInput の Enter を奪わない(preventDefault も送信もしない)。改行は既定動作、送信は送信ボタンのみ。
+  判定はキー押下ごとに評価し、リサイズ/画面回転に追従(読み込み時固定にしない)
+- **決定(デスクトップ)**: 従来どおり Enter送信・Shift+Enter改行を維持。ただし IME変換中
+  (e.isComposing が真、または e.keyCode === 229)は送信をスキップし preventDefault もしない
+  (日本語変換確定のEnterで誤送信されていた既存バグの是正)
+- **スコープ**: 変更は app.js の chatInput keydown ハンドラ内に限定。handleSend 本体・リネーム欄の
+  keydown・レイアウトは不変。index.html のプレースホルダは「メッセージを入力」に簡素化
+  (デスクトップ前提の旧文言はモバイルで誤解を招くため)。app.js のみ ?v=037 に更新
+- **検証**: desktop(Shift+Enter改行 / Enter送信 / 合成IME Enterは非送信)・mobile 375px
+  (Enterで改行・非送信)を Playwright で確認。既存adminで検証しコンソールエラー無し

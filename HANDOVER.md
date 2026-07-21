@@ -8,14 +8,19 @@
 - ChatGPT / Claude / Gemini の代替。ロールプレイ要素なし
 - GitHub Public(MIT License)。機密・実環境情報(IP/ホスト名/トークン等)はコミット禁止
 
-## 現在地(2026-07 / 032完了時点)
-- **フェーズ**: Phase 4(WEB検索 / RAG / ツール呼び出し)。**MCP化は一区切り(032完了)し、実運用可能な状態**。
-  Phase 1〜3 完了済み。RAG は未着手
+## 現在地(2026-07 / v1完成・037完了時点)
+- **フェーズ**: Phase 4(WEB検索 / RAG / ツール呼び出し)。**v1完成・実運用中**
+  (本番 https://plainchat.sai-dev.uk 稼働、PC/スマホ実機で動作確認済み)。MCP化は 032 で一区切り。
+  現在は「細かい改善」フェーズ(使って気づいた粗を潰す段階)。Phase 1〜3 完了済み。RAG は未着手
 - **使える機能**:
+  - コアチャット: 認証/会話CRUD/SSEストリーミング/添付(画像Vision・テキストファイル)/
+    検索・日付フィルタ/システムプロンプト(グローバル+会話別)/タイトル自動生成/ダークモード
   - WEB検索: SearXNG を MCP(stdio, 既製 mcp-searxng)経由で consume
   - NookResonance 連携: キャラクター性格取得を MCP(HTTP/Streamable HTTP, 認証あり)経由で consume
+    (030 で接続実証。既定引数機構=旧034 は没のため自動 user_id 注入は無し)
   - ツールは登録型で MCP のみが登録源(builtin は 032 で撤去)。DB(mcp_servers)が設定の唯一の源
   - 管理者向け MCP 設定画面(追加/編集/削除/有効切替/再接続)。シークレットは封筒暗号で DB 格納
+  - PWA(ホーム画面アイコン・standalone 起動、034)。モバイルレスポンシブ(サイドバードロワー化、035)
 - **アーキテクチャの芯(詳細は DECISIONS)**:
   - ツール呼び出しは chat.js の multi-round ループ。tools は登録型(registry)+DB台帳(tools)。
     往復はターン内一時利用でDB非保存。制御 env: TOOLS_ENABLED / TOOLS_MAX_ROUNDS
@@ -23,7 +28,7 @@
     登録源は origin='mcp:<label>'、LLM 向けツール名は <label>__<tool> で名前空間化
   - シークレット(env/headers)は AES-256-GCM 封筒暗号(鍵は .env の SECRET_ENC_KEY)。DBには暗号文のみ
 
-- **直近の完了(024〜032。詳細な判断は DECISIONS 参照)**:
+- **直近の完了(024〜037。詳細な判断は DECISIONS 参照)**:
   - 024 ツール基盤(登録型 registry + DB tools 台帳 + origin + 起動時ミラー同期)
   - 025 ツール呼び出しループ(chat.js multi-round化。tool_call/tool_result SSE・上限 tool_choice:'none'・
     失敗はループ継続・往復は非保存)
@@ -36,15 +41,25 @@
   - 031 [是正] reasoning_content フォールバック(content皆無時のみ思考タグ除去して本文採用)
   - 032 builtin撤去 + sync契約見直し(登録源をMCPのみに一本化。孤児toolsは接続成功源から消えた分だけ
     enabled=0 無効化。後方互換seed・DEBUG_searxng依存を撤去 = DBが唯一の源)
+  - 033 MCP子プロセスのクラッシュ時孤児化予防(app.listen error捕捉・uncaughtException/
+    unhandledRejection での closeMcp・exit 同期kill・shuttingDown 一本化。予防に集中し掃除はしない)
+  - 034 PWA対応(manifest + 青地/白吹き出し+P アイコン一式。standalone 起動。Service Worker は無し)
+  - 035 モバイルレスポンシブ(@media(max-width:768px) 内でのみ上書き。サイドバードロワー化+
+    チャット全幅・入力欄/ボタンの潰れ解消。PC 2カラムは無干渉)
+  - 036 欠番(キャッシュ問題を☰配線と誤診した仕様書を破棄)
+  - 037 モバイル改行対応 + PC日本語IME誤送信ガード(Enter挙動を端末別に分岐)
 
 - **次のタスク**:
-  - 034 既定引数機構(MCPツールにサーバー既定引数=例 user_id を持たせ handler が注入。
-    029設定画面に欄追加・mcp_servers にカラム追加。NookResonance 連携を実用レベルに)
+  - 038 モーダルのドラッグ誤クローズ修正(MCP設定+汎用モーダル。prompts/queue に投入済み・未実行)
+  - その後: WEB検索の出典表示(②。案 A/B/C は設計相談中。採番未定)
 
 - **未決/宿題**:
+  - キャッシュ自動バージョニング: 配信時に css/js へ mtime/hash クエリを自動付与し、手書き ?v=NNN を撤廃。
+    改善フェーズの最有力(下記ブラウザキャッシュ罠の恒久対策)
   - 履歴窓化+要約: chat.js は全履歴を無制限再送しており長会話でプロンプトが肥大。直近Nターン/トークン予算で
     打ち切り+要約に畳む改修が必要(NookResonance の概念は持ち込まない)。別トラック
   - RAG: 未着手(embeddings/ベクタストア。同じ registry/ループ/LLM契約の上に載る想定)
+  - (没)既定引数機構(旧034 の user_id 等の自動注入): NookResonance 参照終了で動機が薄れ没。復活時は再採番
 
 - **ブラウザキャッシュ(035で遭遇)**: フロント資産(css/js)を変更しても実機ブラウザが古い資産を
   掴み、変更が反映されない(エミュレーションは毎回フレッシュ取得のため露呈せず、実機だけ旧UIで動く)。
