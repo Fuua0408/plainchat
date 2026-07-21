@@ -577,4 +577,12 @@
   は元々 content 配列の text ブロックを \n 結合して1本の文字列に畳んでおり、この点は無改修で足りる
 - **決定(表示UI)**: assistantメッセージ下に折りたたみ(デフォルト閉じ・クリックで展開)。
   展開でラウンドごとの往復(ツール名・引数・結果)を表示する
-- **採番**: 039
+- **実装(039完了)**: tool_invocations テーブルは attachments と同型(message_id/conversation_id/user_id
+  いずれもON DELETE CASCADE)。保存処理は saveAssistantMessage 内に一元化し、この関数を呼ぶ全経路
+  (正常終了・タイムアウト/切断による部分保存)で自動的に効く形にした。最初のトークン前の失敗で
+  メッセージ自体を保存しない経路では toolInvocationsBuffer も捨てる(既存の非保存方針と整合)
+  - **是正(039-fix)**: 折りたたみが開閉しない不具合を修正。.tool-invocations-body に
+  display: flex を無条件指定していたため、JSのhidden属性切り替えが上書きされ常に展開表示に
+  なっていた。.tool-invocations-body[hidden] { display: none; } を追加(sidebar-overlay/
+  drag-drop-overlay/attach-preview-list/mcp-transport-fields と同じ既存の[hidden]上書き
+  パターンに準拠)。実ブラウザで開閉・出典カード表示ともに動作確認済み

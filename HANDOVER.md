@@ -28,10 +28,7 @@
     登録源は origin='mcp:<label>'、LLM 向けツール名は <label>__<tool> で名前空間化
   - シークレット(env/headers)は AES-256-GCM 封筒暗号(鍵は .env の SECRET_ENC_KEY)。DBには暗号文のみ
 
-- **直近の完了(024〜038。詳細な判断は DECISIONS 参照)**:
-  - 024 ツール基盤(登録型 registry + DB tools 台帳 + origin + 起動時ミラー同期)
-  - 025 ツール呼び出しループ(chat.js multi-round化。tool_call/tool_result SSE・上限 tool_choice:'none'・
-    失敗はループ継続・往復は非保存)
+- **直近の完了(025〜039。詳細な判断は DECISIONS 参照)**:
   - 026 MCPクライアント第一増分(stdio、mcp-searxng を子プロセス起動して接続)
   - 027 設定ソース抽象化 loadMcpServers() + 複数サーバー対応
   - 028a mcp_servers テーブル + 封筒暗号(env/headers 別カラム)+ 鍵未設定退避 + 後方互換seed
@@ -50,11 +47,12 @@
   - 037 モバイル改行対応 + PC日本語IME誤送信ガード(Enter挙動を端末別に分岐)
   - 038 モーダルのドラッグ誤クローズ修正(MCP設定+汎用モーダル。prompts/queue に投入済み・未実行)
   - その後: WEB検索の出典表示(②。案 A/B/C は設計相談中。採番未定)
+  - 039 WEB検索等の出典表示(tool_invocationsの永続化+折りたたみ表示)。tool_invocations テーブル追加
+    (attachmentsと同型・CASCADE)。chat.jsのsaveAssistantMessage内でツール往復を紐づけ保存する形に一元化
+    (呼び出し漏れを構造的に防止)。SSE doneイベントにtool_invocationsを追加、GET /:id/messagesも同型拡張。
+    フロントは折りたたみ(デフォルト閉じ)+searxng専用パーサー(未知tool_nameはraw textフォールバック)
 
-- **次のタスク**:
-  - WEB検索の出典表示(②)を設計中(未採番・実装前)。方式=案C(永続化)、保存範囲=MCPツール
-    呼び出し全般を汎用永続化、まで決定済み。残課題は DECISIONS「WEB検索の出典表示(②)」参照
-    (表示方法の未決・mcp-searxng result形式の要確認・コネクタ復旧待ち)
+- **次のタスク**: 未定(039完了。次の改善項目は次回相談)
 
 - **未決/宿題**:
   - キャッシュ自動バージョニング: 配信時に css/js へ mtime/hash クエリを自動付与し、手書き ?v=NNN を撤廃。
