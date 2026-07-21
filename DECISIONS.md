@@ -587,7 +587,7 @@
   drag-drop-overlay/attach-preview-list/mcp-transport-fields と同じ既存の[hidden]上書き
   パターンに準拠)。実ブラウザで開閉・出典カード表示ともに動作確認済み
 
-## 2026-07(040予定): 現在日時取得ツール(clock)の追加
+## 2026-07(040): 現在日時取得ツール(clock)の追加
 - **背景**: MCP化(032以降)によりモデルがWeb検索等のツールを能動的に使うようになった一方、
   モデル自身が「現在の年月日」を正確に把握できていないと、検索クエリの年号判断等に悪影響が出る
   (011のシステムプロンプト変数{{currentDateTime}}は受動的な埋め込みに留まり、長い会話・長い
@@ -604,4 +604,13 @@
   「無効化」した場合は再起動しても復活しない(行は残るため)。ただし「削除」した場合は次回起動時に
   再度自動追加される(既知の仕様として許容。シークレットを持たない低リスクなツールのために
   専用のseed済みフラグ機構を追加するのはMVP規律に反すると判断)
+- **実装(040完了)**: src/mcp-servers/clock/index.mjs(@modelcontextprotocol/sdk低レベルServer API、
+  stdio、外部通信・env依存なし)を新規作成し、catalog.jsにid='clock'エントリを追加。db.js の
+  initDb()内(migrate→seedInitialUserの後、initMcp()より前)でlabel='clock'不在時のみ自動INSERTする
+  seedClockMcpServerを追加した。実DBをバックアップの上で検証: 再起動での自動追加・enabled=1・
+  重複しない冪等性・無効化後の復活しないこと・SECRET_ENC_KEY未設定でもseed/読み込み双方が成功し
+  他の要シークレットサーバーはスキップされること、を確認済み。実チャットでも
+  「今日は何年何月何日?」→clock__get_current_datetime呼び出し→正しい日付での応答、
+  「今年の最新ニュースを検索して」→正しい年(2026年)を使った検索クエリでの呼び出しを
+  SSEイベント・tool_invocationsテーブル双方で確認した
 - **採番**: 040

@@ -5,6 +5,7 @@ const bcrypt = require('bcrypt');
 const path = require('path');
 const fs = require('fs');
 const logger = require('./logger');
+const { getCatalogEntry } = require('./mcp/catalog');
 
 let _db = null;
 
@@ -170,10 +171,32 @@ function seedInitialUser(db) {
   logger.info(`db seed: initial admin user "${username}" created`);
 }
 
+// 040: シークレット不要な自前clock MCPサーバーを、新規/既存デプロイの両方でデフォルト有効にする。
+// label='clock'が既に存在する場合(ユーザーの無効化・編集を含む)は何もしない。一度追加するだけ
+function seedClockMcpServer(db) {
+  const existing = db.prepare('SELECT id FROM mcp_servers WHERE label = ?').get('clock');
+  if (existing) return;
+
+  const entry = getCatalogEntry('clock');
+  if (!entry || !entry.command) {
+    logger.error('db seed: clock catalog entry is unavailable (index.mjs not found?), skipping seed');
+    return;
+  }
+
+  const { next } = db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM mcp_servers').get();
+  db.prepare(
+    `INSERT INTO mcp_servers
+       (label, enabled, transport, command, args, url, env_enc, env_iv, env_tag, headers_enc, headers_iv, headers_tag, catalog_id, sort_order)
+     VALUES ('clock', 1, 'stdio', ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?)`
+  ).run(entry.command, JSON.stringify(entry.args || []), entry.id, next);
+  logger.info('db seed: clock MCP server added (enabled=1)');
+}
+
 function initDb() {
   const db = getDb();
   migrate(db);
   seedInitialUser(db);
+  seedClockMcpServer(db);
   return db;
 }
 
