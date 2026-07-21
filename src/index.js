@@ -2,6 +2,7 @@
 
 require('dotenv').config();
 
+const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const logger = require('./logger');
@@ -9,6 +10,7 @@ const { initDb, getDb } = require('./db');
 const tools = require('./tools');
 const { initMcp, closeMcp, getActiveChildPids } = require('./mcp');
 const { cleanupOrphanUploads } = require('./attachmentCleanup');
+const { getAssetVersion } = require('./assetVersion');
 const authRoutes = require('./routes/auth');
 const conversationsRoutes = require('./routes/conversations');
 const chatRoutes = require('./routes/chat');
@@ -18,6 +20,7 @@ const mcpAdminRoutes = require('./routes/mcpAdmin');
 
 const app = express();
 const PORT = process.env.PORT || 18091;
+const publicDir = path.join(__dirname, '..', 'public');
 
 app.use(express.json());
 
@@ -32,7 +35,37 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/uploads', uploadsRoutes);
 app.use('/api/mcp', mcpAdminRoutes);
 
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// css/style.css・js/api.js・js/app.js への参照に、その時点のファイル内容ハッシュを?v=として
+// 付与する。対象はhref/src="<path>" または "<path>?v=旧値" のどちらの形でも一致させ、常に
+// 現在のハッシュへ揃える(041)
+const VERSIONED_ASSETS = ['css/style.css', 'js/api.js', 'js/app.js'];
+
+function injectAssetVersions(html) {
+  let result = html;
+  for (const assetPath of VERSIONED_ASSETS) {
+    const version = getAssetVersion(path.join(publicDir, assetPath));
+    const pattern = new RegExp(`(["'])${assetPath}(?:\\?v=[^"']*)?\\1`, 'g');
+    result = result.replace(pattern, `$1${assetPath}?v=${version}$1`);
+  }
+  return result;
+}
+
+function serveIndexHtml(req, res) {
+  let html;
+  try {
+    html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf8');
+  } catch (e) {
+    logger.error('failed to read index.html', { error: e.message });
+    return res.status(500).send('internal server error');
+  }
+  res.set('Cache-Control', 'no-cache');
+  res.send(injectAssetVersions(html));
+}
+
+app.get('/', serveIndexHtml);
+app.get('/index.html', serveIndexHtml);
+
+app.use(express.static(publicDir, { index: false }));
 
 // 起動順序: MCP接続+登録(initMcp、registryはbuiltinが無いため空から始まる)→
 // その接続成功サーバー集合を使ってtools台帳へミラー同期(孤児tools無効化はここで判定)。
