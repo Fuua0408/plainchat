@@ -586,3 +586,22 @@
   なっていた。.tool-invocations-body[hidden] { display: none; } を追加(sidebar-overlay/
   drag-drop-overlay/attach-preview-list/mcp-transport-fields と同じ既存の[hidden]上書き
   パターンに準拠)。実ブラウザで開閉・出典カード表示ともに動作確認済み
+
+## 2026-07(040予定): 現在日時取得ツール(clock)の追加
+- **背景**: MCP化(032以降)によりモデルがWeb検索等のツールを能動的に使うようになった一方、
+  モデル自身が「現在の年月日」を正確に把握できていないと、検索クエリの年号判断等に悪影響が出る
+  (011のシステムプロンプト変数{{currentDateTime}}は受動的な埋め込みに留まり、長い会話・長い
+  システムプロンプト中では埋もれがちで心もとない)
+- **決定**: 032で撤去したbuiltinコードパス(origin='builtin')は復活させない。代わりに、外部npm依存・
+  シークレットいずれも不要な自前の超小型MCPサーバー(src/mcp-servers/clock/)を作り、既存のstdio
+  カタログ機構(catalog.js)に載せる。登録源は引き続きMCPのみという032の原則を維持したまま、
+  実質的にbuiltinと同等の使い勝手を実現する
+- **決定(ツール仕様)**: 登録名 clock__get_current_datetime。引数なし。戻り値はJSON文字列
+  ({iso, date, time, weekday, timezone, unix})。descriptionでモデルに「相対的な日付表現・
+  検索クエリの年号判断の前に呼ぶ」よう明示的に誘導する
+- **決定(デフォルト有効)**: 起動時、mcp_servers に label='clock' の行が無ければ自動でenabled=1
+  でINSERTする(シークレット不要なためSECRET_ENC_KEY未設定でも動作する)。ユーザーが後から
+  「無効化」した場合は再起動しても復活しない(行は残るため)。ただし「削除」した場合は次回起動時に
+  再度自動追加される(既知の仕様として許容。シークレットを持たない低リスクなツールのために
+  専用のseed済みフラグ機構を追加するのはMVP規律に反すると判断)
+- **採番**: 040
